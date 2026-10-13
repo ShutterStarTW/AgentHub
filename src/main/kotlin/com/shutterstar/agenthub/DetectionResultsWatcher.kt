@@ -123,15 +123,20 @@ object DetectionResultsWatcher {
     private const val POLL_INTERVAL_MS = 500L
     private const val MAX_WAIT_MS = 60_000L
 
+    // Update-all runs every outdated agent's package manager one after another; a handful of slow
+    // installs easily exceed the one-minute budget of the detect/version scripts.
+    private const val UPDATE_MAX_WAIT_MS = 30 * 60_000L
+
     private fun pollFile(
         resultsFilePath: Path,
         taskRef: AtomicReference<ScheduledFuture<*>?>,
         onTimeout: () -> Unit = {},
+        maxWaitMs: Long = MAX_WAIT_MS,
         onComplete: (String) -> Unit,
     ) {
         val settings = AgentSettingsState.getInstance()
         val snapshot = settings.executionSnapshot()
-        val polling = ResultFilePolling(resultsFilePath, MAX_WAIT_MS)
+        val polling = ResultFilePolling(resultsFilePath, maxWaitMs)
         val ownTask = AtomicReference<ScheduledFuture<*>?>()
         fun finish(callback: () -> Unit) {
             val own = ownTask.getAndSet(null) ?: return
@@ -169,7 +174,7 @@ object DetectionResultsWatcher {
         onTimeout: () -> Unit = {},
         onComplete: (UpdateAllReport) -> Unit,
     ) {
-        pollFile(resultsFilePath, updateWatchTask, onTimeout) { content ->
+        pollFile(resultsFilePath, updateWatchTask, onTimeout, UPDATE_MAX_WAIT_MS) { content ->
             onComplete(UpdateAllReport.parse(content))
         }
     }

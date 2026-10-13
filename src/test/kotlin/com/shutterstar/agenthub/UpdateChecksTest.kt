@@ -166,6 +166,42 @@ class UpdateChecksTest {
     }
 
     @Test
+    fun `self updating native install is unverified, not compared with the npm version scheme`() {
+        val junie = CodingAgents.all.first { it.id == "junie" }
+        assertTrue(junie.selfUpdating)
+        val checker = UpdateChecker(
+            runCommand = { cmd ->
+                when (cmd) {
+                    "npm ls -g --depth=0 --json" -> """{"dependencies":{}}"""
+                    "junie --version" -> "Junie version: 26.10.5 (3579.5)"
+                    else -> ""
+                }
+            },
+            fetcher = FakeFetcher(mapOf("@jetbrains/junie" to "3110.7.0")),
+        )
+        val outcome = checker.check(listOf(junie))
+        assertEquals(emptyList<String>(), outcome.outdated)
+        assertEquals(listOf("junie"), outcome.unverified)
+    }
+
+    @Test
+    fun `npm managed self updating agent still uses npm outdated`() {
+        val junie = CodingAgents.all.first { it.id == "junie" }
+        val checker = UpdateChecker(
+            runCommand = { cmd ->
+                when (cmd) {
+                    "npm ls -g --depth=0 --json" -> """{"dependencies":{"@jetbrains/junie":{"version":"3000.1.0"}}}"""
+                    "npm outdated -g --json" ->
+                        """{"@jetbrains/junie":{"current":"3000.1.0","wanted":"3110.7.0","latest":"3110.7.0","location":"x"}}"""
+                    else -> ""
+                }
+            },
+            fetcher = FakeFetcher(emptyMap()),
+        )
+        assertEquals(listOf("junie"), checker.check(listOf(junie)).outdated)
+    }
+
+    @Test
     fun `pip managed agent uses pip outdated with normalized names`() {
         val semgrep = agent("semgrep", "pip install --upgrade --upgrade-strategy eager semgrep")
         val checker = UpdateChecker(

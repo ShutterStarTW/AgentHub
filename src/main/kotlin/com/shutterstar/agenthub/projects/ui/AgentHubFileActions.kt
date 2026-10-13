@@ -4,7 +4,7 @@ import com.intellij.ide.actions.RevealFileAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
@@ -31,7 +31,7 @@ internal object AgentHubFileActions {
             ApplicationManager.getApplication().invokeLater({
                 if (isDisposed() || project.isDisposed) return@invokeLater
                 when {
-                    file != null -> FileEditorManager.getInstance(project).openFile(file, true)
+                    file != null -> OpenFileDescriptor(project, file).navigate(true)
                     isDirectory -> revealDirectoryOrFile(path)
                     else -> DetectionResultsWatcher.showNotification(project, title, missingMessage, NotificationType.WARNING)
                 }

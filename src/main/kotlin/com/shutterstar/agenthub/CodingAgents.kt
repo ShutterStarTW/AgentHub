@@ -25,6 +25,12 @@ data class CodingAgent(
      * installed some other way (e.g. Claude Code's native installer).
      */
     val versionSource: String = "",
+    /**
+     * The native install keeps itself current and its `--version` output is not comparable with the
+     * registry package (Junie: product 26.x + build 3579.x vs npm 3110.x). The registry comparison is
+     * skipped for it → `?`; an npm-managed copy is still checked through npm's own `outdated` report.
+     */
+    val selfUpdating: Boolean = false,
     val provider: String = "",
     val url: String,
     val devUrl: String = "",
@@ -349,9 +355,14 @@ object CodingAgents {
             id = "junie",
             name = "Junie CLI",
             command = "junie",
-            installHint = "npm install -g @jetbrains/junie",
+            installHint = "curl -fsSL https://junie.jetbrains.com/install.sh | bash",
+            // Only runs for an npm-managed copy (the native install self-updates and reports `?`).
             updateHint = "npm update --quiet --no-fund -g @jetbrains/junie",
-            uninstallHint = "npm uninstall -g @jetbrains/junie",
+            // The npm step also removes a copy installed with the 1.3.3 npm hint; harmless when absent.
+            uninstallHint = "npm uninstall -g @jetbrains/junie; rm -f ~/.local/bin/junie; rm -rf ~/.local/share/junie",
+            installHintWindows = "irm https://junie.jetbrains.com/install.ps1 | iex",
+            uninstallHintWindows = "npm uninstall -g @jetbrains/junie; Remove-Item -Force \"\$env:USERPROFILE\\.local\\bin\\junie.bat\" -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force \"\$env:USERPROFILE\\.local\\share\\junie\" -ErrorAction SilentlyContinue",
+            selfUpdating = true,
             provider = "JetBrains",
             url = "https://junie.jetbrains.com",
             devUrl = "https://github.com/JetBrains/junie",

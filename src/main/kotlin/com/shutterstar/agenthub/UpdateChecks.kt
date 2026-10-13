@@ -174,6 +174,7 @@ class UpdateChecker(
                             if (npmOutdated == null) UpdateStatus.UNKNOWN else if (source.id in npmOutdated) UpdateStatus.OUTDATED else UpdateStatus.CURRENT
                         source.kind == VersionSource.Kind.PYPI && source.id in pipInstalled ->
                             if (pipOutdated == null) UpdateStatus.UNKNOWN else if (source.id in pipOutdated) UpdateStatus.OUTDATED else UpdateStatus.CURRENT
+                        agent.selfUpdating -> UpdateStatus.UNKNOWN
                         else -> classifyVersions(
                             runCommand("${agent.command} ${agent.versionArgs}".trim()),
                             fetcher.latest(source),

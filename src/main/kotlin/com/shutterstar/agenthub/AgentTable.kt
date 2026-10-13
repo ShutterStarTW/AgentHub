@@ -23,6 +23,8 @@ import javax.swing.JTable
 import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.RowFilter
+import javax.swing.RowSorter
+import javax.swing.SortOrder
 import javax.swing.SwingUtilities
 import javax.swing.table.AbstractTableModel
 import javax.swing.table.DefaultTableCellRenderer
@@ -45,6 +47,19 @@ internal open class HoverSafeCellRenderer : DefaultTableCellRenderer() {
 }
 
 internal data class AgentRow(val agent: CodingAgent, var enabled: Boolean)
+
+/** Status filter of the Settings tables; [matches] takes the status cell text (✓ ↑ ? ✗ or blank). */
+internal enum class StatusFilter(val label: String, private val statuses: Set<String>?) {
+    ALL("All", null),
+    INSTALLED("Installed", setOf("✓", "↑", "?")),
+    NOT_INSTALLED("Not installed", setOf("✗")),
+    UPDATE_AVAILABLE("Update available", setOf("↑")),
+    ;
+
+    fun matches(status: String): Boolean = statuses == null || status in statuses
+
+    override fun toString() = label
+}
 
 /**
  * Everything [AgentTable] needs from its owning [AgentSettingsConfigurable] that isn't fixed at
@@ -164,9 +179,13 @@ internal class AgentTable(val rows: List<AgentRow>, private val context: AgentTa
         setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
         tableHeader.reorderingAllowed = false
 
-        // Row-only filtering (search box) — sorting itself stays off so row order never changes.
+        // The header cannot re-sort (all columns unsortable); the sorter only keeps the fixed
+        // "updatable, installed, missing, unknown" order. It is stable, so equal ranks stay in
+        // the model's alphabetical order, and toggling a checkbox never moves a row.
         val sorter = TableRowSorter(tableModel)
         for (col in 0 until tableModel.columnCount) sorter.setSortable(col, false)
+        sorter.setComparator(3, compareBy<Any?> { statusRank(it?.toString().orEmpty()) })
+        sorter.sortKeys = listOf(RowSorter.SortKey(3, SortOrder.ASCENDING))
         rowSorter = sorter
 
         columnModel.getColumn(0).apply {
@@ -453,18 +472,43 @@ internal class AgentTable(val rows: List<AgentRow>, private val context: AgentTa
         }
     }
 
-    // Filters rows to those whose agent name or provider contains [query] (case-insensitive).
-    // Sorting itself is disabled on the sorter (see rowSorter setup above), so this only ever
-    // hides/shows rows, never reorders them.
+    private var query = ""
+    private var statusFilter = StatusFilter.ALL
+
+    // Filters rows to those whose agent name or provider contains the query (case-insensitive)
+    // and whose status matches the status filter. Only hides/shows rows, never reorders them.
     fun applyFilter(query: String) {
-        val trimmed = query.trim()
+        this.query = query.trim()
+        refreshFilter()
+    }
+
+    fun applyStatusFilter(filter: StatusFilter) {
+        statusFilter = filter
+        refreshFilter()
+    }
+
+    private fun refreshFilter() {
         @Suppress("UNCHECKED_CAST")
-        val sorter = table.rowSorter as? TableRowSorter<AbstractTableModel>
-        sorter?.rowFilter = if (trimmed.isEmpty()) {
+        val sorter = table.rowSorter as? TableRowSorter<AbstractTableModel> ?: return
+        val text = query
+        val status = statusFilter
+        sorter.rowFilter = if (text.isEmpty() && status == StatusFilter.ALL) {
             null
         } else {
-            RowFilter.regexFilter("(?i)" + Regex.escape(trimmed), 1, 2)
+            object : RowFilter<AbstractTableModel, Int>() {
+                override fun include(entry: Entry<out AbstractTableModel, out Int>): Boolean =
+                    status.matches(entry.getStringValue(3)) &&
+                        (text.isEmpty() || entry.getStringValue(1).contains(text, ignoreCase = true) ||
+                            entry.getStringValue(2).contains(text, ignoreCase = true))
+            }
         }
+    }
+
+    private fun statusRank(status: String): Int = when (status) {
+        "↑" -> 0
+        "✓", "?" -> 1
+        "✗" -> 2
+        else -> 3
     }
 
     private fun extractDomain(url: String): String = if (url.isBlank()) "" else try {

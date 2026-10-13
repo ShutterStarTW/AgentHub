@@ -6,7 +6,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.SearchTextField
@@ -819,7 +819,7 @@ class AgentHubToolWindowPanel(
             }.getOrNull()
             ApplicationManager.getApplication().invokeLater({
                 if (disposed || project.isDisposed) return@invokeLater
-                if (file != null) FileEditorManager.getInstance(project).openFile(file, true)
+                if (file != null) OpenFileDescriptor(project, file).navigate(true)
                 else skillsPanel.showFileError("SKILL.md is no longer available. Refresh the skill list.")
             }, ModalityState.any())
         }

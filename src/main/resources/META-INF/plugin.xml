@@ -130,6 +130,12 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>1.3.4</b></p>
+        <ul>
+            <li>Settings: a <b>status filter</b> (All / Installed / Not installed / Update available) on the agent and companion tables; updatable agents are listed first.</li>
+            <li>Junie CLI installs with the official installer. Its self-updating native install shows <code>?</code> instead of a false update.</li>
+            <li><b>Update all</b> waits up to 30 minutes for the results.</li>
+        </ul>
         <p><b>1.3.3</b></p>
         <ul>
             <li>Skill sync restores the original when an atomic replace fails instead of deleting it.</li>

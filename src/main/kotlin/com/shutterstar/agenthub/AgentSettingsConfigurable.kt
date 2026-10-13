@@ -105,6 +105,9 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
         maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
     }
 
+    private val agentStatusCombo = statusCombo("Filter agents by status")
+    private val companionStatusCombo = statusCombo("Filter companion tools by status")
+
     private val runInBackgroundCheckbox = JBCheckBox("Run operations in background (no terminal window)")
 
     // Execution environment (Windows only): native shell vs. a WSL distribution.
@@ -121,6 +124,9 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
     private val panel: JComponent by lazy {
         detectButton.addActionListener { runAutoDetect() }
         refreshDetectStatusLabel()
+
+        agentStatusCombo.addActionListener { agentTable.applyStatusFilter(agentStatusCombo.item) }
+        companionStatusCombo.addActionListener { companionTable.applyStatusFilter(companionStatusCombo.item) }
 
         agentSearchField.addDocumentListener(object : DocumentAdapter() {
             override fun textChanged(e: DocumentEvent) = agentTable.applyFilter(agentSearchField.text)
@@ -139,7 +145,7 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
             content.add(Box.createVerticalStrut(JBUI.scale(AgentHubUiComponents.SMALL_GAP)))
             content.add(detectionBannerLabel)
             content.add(Box.createVerticalStrut(JBUI.scale(AgentHubUiComponents.PANEL_INSET)))
-            content.add(agentSearchField)
+            content.add(searchRow(agentSearchField, agentStatusCombo))
             content.add(Box.createVerticalStrut(JBUI.scale(AgentHubUiComponents.CONTROL_GAP)))
             content.add(JBScrollPane(agentTable.table).apply {
                 alignmentX = Component.LEFT_ALIGNMENT
@@ -157,7 +163,7 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
                 },
             )
             content.add(Box.createVerticalStrut(JBUI.scale(AgentHubUiComponents.PANEL_INSET)))
-            content.add(companionSearchField)
+            content.add(searchRow(companionSearchField, companionStatusCombo))
             content.add(Box.createVerticalStrut(JBUI.scale(AgentHubUiComponents.CONTROL_GAP)))
             content.add(JBScrollPane(companionTable.table).apply {
                 alignmentX = Component.LEFT_ALIGNMENT
@@ -410,6 +416,20 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
                 }
             }
         }
+    }
+
+    private fun statusCombo(accessibleName: String) = ComboBox(StatusFilter.entries.toTypedArray()).apply {
+        accessibleContext.accessibleName = accessibleName
+        maximumSize = preferredSize
+    }
+
+    private fun searchRow(search: SearchTextField, status: ComboBox<StatusFilter>) = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.X_AXIS)
+        alignmentX = Component.LEFT_ALIGNMENT
+        add(search)
+        add(Box.createHorizontalStrut(JBUI.scale(AgentHubUiComponents.SMALL_GAP)))
+        add(status)
+        maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
     }
 
     private fun reopenSettings(project: Project) {

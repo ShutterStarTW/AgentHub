@@ -7,6 +7,35 @@ package com.shutterstar.agenthub.projects.model
  * do not keep a project at the top of the list.
  */
 object ProjectVisibility {
+    /**
+     * Drops the empty sessions ([AgentSession.isEmpty]); an agent left without sessions and a project left without
+     * agents drop out too, and counts and `lastActivity` are recomputed from what remains.
+     */
+    fun withoutEmptySessions(projects: List<DiscoveredProject>): List<DiscoveredProject> {
+        if (projects.none { project -> project.agents.any { agent -> agent.sessions.any { it.isEmpty } } }) return projects
+        return projects.mapNotNull { project ->
+            val agents = project.agents.mapNotNull { agent ->
+                val sessions = agent.sessions.filterNot { it.isEmpty }
+                when {
+                    sessions.size == agent.sessions.size -> agent
+                    sessions.isEmpty() -> null
+                    else -> agent.copy(
+                        sessionCount = sessions.size,
+                        sessions = sessions,
+                        lastActivity = sessions.mapNotNull { it.updatedAt ?: it.startedAt }.maxOrNull(),
+                    )
+                }
+            }
+            if (agents.isEmpty()) {
+                null
+            } else if (agents == project.agents) {
+                project
+            } else {
+                project.copy(agents = agents, lastActivity = agents.mapNotNull { it.lastActivity }.maxOrNull())
+            }
+        }.sortedWith(ProjectComparators.discoveredProjectByRecency)
+    }
+
     fun filter(projects: List<DiscoveredProject>, isAgentVisible: (String) -> Boolean): List<DiscoveredProject> {
         var changed = false
         val visible = projects.mapNotNull { project ->

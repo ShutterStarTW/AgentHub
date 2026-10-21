@@ -33,6 +33,16 @@ class ProjectIndexStateMapperTest {
     }
 
     @Test
+    fun `the deleted flag survives persistence and defaults to present`() {
+        val deleted = project().copy(missing = true)
+
+        val restored = ProjectIndexStateMapper.decode(ProjectIndexStateMapper.encode(listOf(deleted), Instant.EPOCH)).single()
+
+        assertTrue(restored.missing)
+        assertEquals(false, ProjectIndexStateMapper.decode(ProjectIndexStateMapper.encode(listOf(project()), Instant.EPOCH)).single().missing)
+    }
+
+    @Test
     fun `session names survive persistence`() {
         val restored = ProjectIndexStateMapper.decode(
             ProjectIndexStateMapper.encode(listOf(project()), Instant.EPOCH),

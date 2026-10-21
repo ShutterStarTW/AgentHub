@@ -31,6 +31,7 @@ object ProjectIndexStateMapper {
         gitRoot = project.gitRoot,
         gitRemote = project.gitRemote,
         currentBranch = project.currentBranch,
+        missing = project.missing,
         agents = project.agents.map(::encodeAgent).toMutableList(),
     )
 
@@ -74,6 +75,7 @@ object ProjectIndexStateMapper {
             currentBranch = project.currentBranch,
             agents = agents,
             lastActivity = lastActivity,
+            missing = project.missing,
         )
     }
 

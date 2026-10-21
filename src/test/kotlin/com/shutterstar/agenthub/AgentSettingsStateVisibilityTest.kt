@@ -7,6 +7,36 @@ import org.junit.jupiter.api.Test
 
 class AgentSettingsStateVisibilityTest {
     @Test
+    fun `deleted projects are shown by default and the listener hears a change once`() {
+        val settings = AgentSettingsState()
+        var notified = 0
+        val subscription = settings.addProjectViewListener { notified++ }
+
+        assertTrue(settings.showDeletedProjects)
+        settings.setShowDeletedProjects(true)
+        settings.setShowDeletedProjects(false)
+        subscription.close()
+        settings.setShowDeletedProjects(true)
+
+        assertEquals(1, notified)
+        assertTrue(settings.showDeletedProjects)
+    }
+
+    @Test
+    fun `empty sessions are shown by default and the same listener hears a change`() {
+        val settings = AgentSettingsState()
+        var notified = 0
+        settings.addProjectViewListener { notified++ }
+
+        assertTrue(settings.showEmptySessions)
+        settings.setShowEmptySessions(true)
+        settings.setShowEmptySessions(false)
+
+        assertEquals(1, notified)
+        assertFalse(settings.showEmptySessions)
+    }
+
+    @Test
     fun `nothing is visible and installation is unknown before the first detection`() {
         val settings = AgentSettingsState()
 

@@ -179,12 +179,14 @@ internal class ProjectsPanel(
         ).apply { isOpaque = false }
 
         init {
+            titleFirst()
             topRow.add(iconsPanel, BorderLayout.EAST)
         }
 
         override fun bind(value: DiscoveredProject) = DetailRow(
-            title = value.name,
-            titleAccessibleName = value.name,
+            title = if (value.missing) "${value.name} (deleted)" else value.name,
+            titleAccessibleName = if (value.missing) "${value.name}, deleted project" else value.name,
+            muted = value.missing,
             details = listOf(
                 value.path?.let { "Path: $it" } ?: value.gitRemote?.let { "Git: $it" } ?: "Unknown location",
                 AgentHubUiFormat.activitySummary("${value.agents.size} agents", value.agents.sumOf { it.sessionCount }, value.lastActivity),

@@ -109,6 +109,8 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
     private val companionStatusCombo = statusCombo("Filter companion tools by status")
 
     private val runInBackgroundCheckbox = JBCheckBox("Run operations in background (no terminal window)")
+    private val showDeletedProjectsCheckbox = JBCheckBox("Show deleted projects (directory no longer exists)")
+    private val showEmptySessionsCheckbox = JBCheckBox("Show empty sessions (no prompt, no name)")
 
     // Execution environment (Windows only): native shell vs. a WSL distribution.
     private val execEnvCombo = ComboBox(arrayOf("Windows (native)", "WSL"))
@@ -230,6 +232,10 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
 
             runInBackgroundCheckbox.alignmentX = Component.LEFT_ALIGNMENT
             content.add(runInBackgroundCheckbox)
+            showDeletedProjectsCheckbox.alignmentX = Component.LEFT_ALIGNMENT
+            content.add(showDeletedProjectsCheckbox)
+            showEmptySessionsCheckbox.alignmentX = Component.LEFT_ALIGNMENT
+            content.add(showEmptySessionsCheckbox)
 
             if (OsDetector.isWindows()) {
                 content.add(Box.createVerticalStrut(JBUI.scale(AgentHubUiComponents.CONTROL_GAP)))
@@ -593,7 +599,9 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
             customNameField.text != state.customAgentName ||
             customCommandField.text != state.customAgentCommand ||
             customUrlField.text != state.customAgentUrl
-        val behaviorModified = runInBackgroundCheckbox.isSelected != state.runInBackground
+        val behaviorModified = runInBackgroundCheckbox.isSelected != state.runInBackground ||
+            showDeletedProjectsCheckbox.isSelected != state.showDeletedProjects ||
+            showEmptySessionsCheckbox.isSelected != state.showEmptySessions
         val wslModified = OsDetector.isWindows() &&
             (uiUseWsl() != state.useWsl || uiWslDistro() != state.wslDistro)
         return builtInModified || companionModified || customModified || behaviorModified || wslModified
@@ -610,6 +618,8 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
         state.customAgentCommand = customCommandField.text
         state.customAgentUrl = customUrlField.text
         state.runInBackground = runInBackgroundCheckbox.isSelected
+        settings.setShowDeletedProjects(showDeletedProjectsCheckbox.isSelected)
+        settings.setShowEmptySessions(showEmptySessionsCheckbox.isSelected)
 
         if (OsDetector.isWindows()) {
             val newUseWsl = uiUseWsl()
@@ -669,6 +679,8 @@ class AgentSettingsConfigurable(private val settingsState: AgentSettingsState = 
         customCommandField.text = state.customAgentCommand
         customUrlField.text = state.customAgentUrl
         runInBackgroundCheckbox.isSelected = state.runInBackground
+        showDeletedProjectsCheckbox.isSelected = state.showDeletedProjects
+        showEmptySessionsCheckbox.isSelected = state.showEmptySessions
         if (OsDetector.isWindows()) {
             execEnvCombo.selectedIndex = if (state.useWsl) 1 else 0
             selectDistro(state.wslDistro)

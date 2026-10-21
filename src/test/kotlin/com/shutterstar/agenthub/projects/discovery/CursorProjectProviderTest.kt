@@ -60,10 +60,12 @@ class CursorProjectProviderTest {
             """{"future":{"cwd":"wrong","hasConversation":false},"hasConversation":true,"cwd":${json(project.toString())}}""",
         )
 
-        val session = CursorProjectProvider(cursorDirectory()).discover().single()
+        val sessions = CursorProjectProvider(cursorDirectory()).discover().associateBy { it.sessionId }
 
-        assertEquals("valid", session.sessionId)
-        assertEquals(project.toString(), session.rawProjectPath)
+        assertEquals(setOf("valid", "empty"), sessions.keys)
+        assertEquals(project.toString(), sessions.getValue("valid").rawProjectPath)
+        assertEquals("0", sessions.getValue("empty").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertNull(sessions.getValue("valid").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
     }
 
     @Test

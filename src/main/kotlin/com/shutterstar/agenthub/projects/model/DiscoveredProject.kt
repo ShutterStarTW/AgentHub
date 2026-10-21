@@ -11,4 +11,6 @@ data class DiscoveredProject(
     val currentBranch: String?,
     val agents: List<AgentProject>,
     val lastActivity: Instant?,
+    /** Every recorded location of the project is a directory that no longer exists (deleted or moved). */
+    val missing: Boolean = false,
 )

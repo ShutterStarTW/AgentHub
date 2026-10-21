@@ -44,6 +44,45 @@ class ClaudeProjectProviderTest {
     }
 
     @Test
+    fun `lists sessions without a transcript from the prompt history`() {
+        val kept = homeDirectory.resolve("work/kept")
+        val gone = homeDirectory.resolve("work/gone")
+        writeSession("project", "kept.jsonl", listOf(metadataLine("kept", kept.toString(), "2026-10-01T10:00:00Z")))
+        val history = homeDirectory.resolve(".claude/history.jsonl")
+        Files.writeString(
+            history,
+            listOf(
+                historyLine("kept", kept.toString(), "ignored prompt", 1_770_000_000_000),
+                historyLine("gone", gone.toString(), "/login ", 1_770_000_000_000),
+                historyLine("gone", gone.toString(), "Elemezd az index.html-t", 1_770_000_060_000),
+                historyLine("gone", gone.toString(), "Es folytasd", 1_770_000_180_000),
+                "not-json",
+            ).joinToString("\n"),
+        )
+
+        val sessions = ClaudeProjectProvider(homeDirectory).discover()
+
+        assertEquals(setOf("kept", "gone"), sessions.map { it.sessionId }.toSet())
+        val session = sessions.single { it.sessionId == "gone" }
+        assertEquals(gone.toString(), session.rawProjectPath)
+        assertEquals(Instant.ofEpochMilli(1_770_000_000_000), session.startedAt)
+        assertEquals(Instant.ofEpochMilli(1_770_000_180_000), session.updatedAt)
+        assertEquals("2", session.metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("Elemezd az index.html-t", session.metadata[UserMessageTally.FIRST_MESSAGE_KEY])
+        assertEquals("180000", session.statistics["elapsedMillis"])
+        assertEquals(history.toAbsolutePath().normalize().toString(), session.sourcePath)
+        assertFalse(sessions.single { it.sessionId == "kept" }.sourcePath!!.endsWith("history.jsonl"))
+    }
+
+    @Test
+    fun `a missing project store still lists sessions from the prompt history`() {
+        Files.createDirectories(homeDirectory.resolve(".claude"))
+        Files.writeString(homeDirectory.resolve(".claude/history.jsonl"), historyLine("only", "/work/p", "hello", 1_770_000_000_000))
+
+        assertEquals(listOf("only"), ClaudeProjectProvider(homeDirectory).discover().map { it.sessionId })
+    }
+
+    @Test
     fun `malformed records do not abort discovery`() {
         val projectPath = homeDirectory.resolve("work/valid")
         writeSession("project", "malformed.jsonl", listOf("not-json", "{unfinished"))
@@ -281,6 +320,10 @@ class ClaudeProjectProviderTest {
     }
 
     @Test
+    private fun historyLine(sessionId: String, project: String, display: String, timestamp: Long): String =
+        "{\"display\":${json(display)},\"pastedContents\":{},\"timestamp\":$timestamp," +
+            "\"project\":${json(project)},\"sessionId\":${json(sessionId)}}"
+
     private fun projectsDirectory(): Path = homeDirectory.resolve(".claude/projects")
 
     private fun writeSession(

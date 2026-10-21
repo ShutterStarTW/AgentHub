@@ -3,6 +3,7 @@ package com.shutterstar.agenthub.projects.ui
 import com.intellij.icons.AllIcons
 
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -52,10 +53,13 @@ import com.shutterstar.agenthub.environment.skills.ui.SkillSyncSettingsDialog
 import com.shutterstar.agenthub.environment.skills.ui.SkillsPanel
 import com.shutterstar.agenthub.environment.ui.EnvironmentUiModel
 import com.shutterstar.agenthub.projects.launch.NativeResumeCommands
+import com.shutterstar.agenthub.projects.launch.ResumeTabTitle
+import com.shutterstar.agenthub.projects.launch.RunningSessionProbe
 import com.shutterstar.agenthub.projects.model.AgentSession
 import com.shutterstar.agenthub.projects.discovery.AgentProjectProviders
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectIdentity
+import com.shutterstar.agenthub.projects.model.ProjectVisibility
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexService
 import com.shutterstar.agenthub.storage.SharedStateChangeMonitor
 import java.awt.BorderLayout
@@ -356,6 +360,12 @@ class AgentHubToolWindowPanel(
     private val detectionSubscription = AgentSettingsState.getInstance().addDetectionListener {
         ApplicationManager.getApplication().invokeLater({
             if (!disposed && !project.isDisposed) onInstalledAgentsChanged()
+        }, ModalityState.any())
+    }
+
+    private val projectViewSubscription = AgentSettingsState.getInstance().addProjectViewListener {
+        ApplicationManager.getApplication().invokeLater({
+            if (!disposed && !project.isDisposed) render()
         }, ModalityState.any())
     }
 
@@ -765,20 +775,24 @@ class AgentHubToolWindowPanel(
             updateSkillsStatus()
             return
         }
-        val filteredProjects = ProjectIndexUiModel.filterProjects(projects, query, AgentHubUiComponents::displayName)
+        val settings = AgentSettingsState.getInstance()
+        val withProjects = if (settings.showDeletedProjects) projects else projects.filterNot { it.missing }
+        val shown = if (settings.showEmptySessions) withProjects else ProjectVisibility.withoutEmptySessions(withProjects)
+        val deletedLabel = shown.count { it.missing }.takeIf { it > 0 }?.let { " · $it deleted" }.orEmpty()
+        val filteredProjects = ProjectIndexUiModel.filterProjects(shown, query, AgentHubUiComponents::displayName)
         val sessionless = sessionlessAgentIds()
-        val agents = ProjectIndexUiModel.agents(projects, query, sessionless, AgentHubUiComponents::displayName)
+        val agents = ProjectIndexUiModel.agents(shown, query, sessionless, AgentHubUiComponents::displayName)
         val filtered = query.isNotBlank()
         projectsPanel.setProjects(filteredProjects, refreshing, filtered)
-        agentsPanel.setAgents(agents, projects, refreshing, filtered)
+        agentsPanel.setAgents(agents, shown, refreshing, filtered)
 
-        val sessionCount = projects.sumOf { project -> project.agents.sumOf { it.sessionCount } }
-        val agentCount = projects.flatMap { it.agents }.map { it.agentId }.toSet().size + sessionless.size
+        val sessionCount = shown.sumOf { project -> project.agents.sumOf { it.sessionCount } }
+        val agentCount = shown.flatMap { it.agents }.map { it.agentId }.toSet().size + sessionless.size
         val refreshedAt = indexService.lastRefreshedAt()?.let(AgentHubUiFormat.dateTime::format)
         val counts = if (activeTab == "Agents") {
-            "${ProjectIndexUiModel.countLabel(agents.size, agentCount, "agents", filtered)} · ${projects.size} projects · $sessionCount sessions"
+            "${ProjectIndexUiModel.countLabel(agents.size, agentCount, "agents", filtered)} · ${shown.size} projects$deletedLabel · $sessionCount sessions"
         } else {
-            "${ProjectIndexUiModel.countLabel(filteredProjects.size, projects.size, "projects", filtered)} · $sessionCount sessions"
+            "${ProjectIndexUiModel.countLabel(filteredProjects.size, shown.size, "projects", filtered)}$deletedLabel · $sessionCount sessions"
         }
         statusLabel.text = statusOverride ?: when {
             refreshing -> "Refreshing project index…"
@@ -806,6 +820,7 @@ class AgentHubToolWindowPanel(
         skillMutationController.close()
         refreshSubscription.close()
         detectionSubscription.close()
+        projectViewSubscription.close()
         checkingSpinner.dispose()
         if (activePanelCount.decrementAndGet() == 0) {
             indexService.cancelActiveRefresh()
@@ -853,6 +868,7 @@ class AgentHubToolWindowPanel(
             val command = NativeResumeCommands.command(session.agentId, session.nativeResumeId) { AgentDetector.shellOutput(it, executionSettings = snapshot.settings) }
                 ?: return@executeOnPooledThread
             val workingDirectory = com.shutterstar.agenthub.projects.launch.SessionLaunchDirectory.resolve(session.projectPath)
+            val holder = session.nativeResumeId?.let { RunningSessionProbe.find(session.agentId, it) }
             ApplicationManager.getApplication().invokeLater({
                 if (disposed || project.isDisposed) return@invokeLater
                 if (!settings.isExecutionCurrent(snapshot)) return@invokeLater
@@ -874,9 +890,19 @@ class AgentHubToolWindowPanel(
                     return@invokeLater
                 }
                 val agentName = AgentHubUiComponents.displayName(session.agentId)
-                val name = (session.title ?: session.firstMessage)?.trim()?.takeIf { it.isNotEmpty() }
-                val label = name?.let { if (it.length > TAB_TITLE_CHARS) it.take(TAB_TITLE_CHARS).trimEnd() + "…" else it }
-                    ?: session.id.take(SESSION_ID_TITLE_CHARS)
+                if (holder != null) {
+                    val openAnyway = Messages.showYesNoDialog(
+                        project,
+                        "This $agentName session is already open in a running process (PID ${holder.pid}). " +
+                            "Opening it twice can conflict or be refused by the agent.",
+                        "Resume session",
+                        "Open Anyway",
+                        "Cancel",
+                        Messages.getWarningIcon(),
+                    ) == Messages.YES
+                    if (!openAnyway) return@invokeLater
+                }
+                val label = ResumeTabTitle.label(session.title ?: session.firstMessage, session.id)
                 TerminalCommandRunner.run(project, "🤖 $agentName · $label", command, workingDirectory)
             }, ModalityState.any())
         }
@@ -947,7 +973,5 @@ class AgentHubToolWindowPanel(
         // ProjectIndexService is an app-level singleton shared across all open project windows;
         // only cancel its in-flight refresh once the last observing panel is gone.
         private val activePanelCount = AtomicInteger(0)
-        private const val SESSION_ID_TITLE_CHARS = 8
-        private const val TAB_TITLE_CHARS = 40
     }
 }

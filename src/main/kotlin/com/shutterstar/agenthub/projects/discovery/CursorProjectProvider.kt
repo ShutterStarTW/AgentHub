@@ -51,7 +51,7 @@ class CursorProjectProvider(
         val fields = MetadataJsonParser.topLevelStringFields(json, STRING_FIELDS)
         val timestamps = MetadataJsonParser.topLevelLongFields(json, TIMESTAMP_FIELDS)
         val flags = MetadataJsonParser.topLevelBooleanFields(json, BOOLEAN_FIELDS)
-        if (flags[HAS_CONVERSATION_FIELD] == false) return null
+        val emptyChat = flags[HAS_CONVERSATION_FIELD] == false
 
         val projectPath = fields[CWD_FIELD]?.takeIf { it.isNotBlank() } ?: return null
         val sessionId = metadataFile.parent?.name?.takeIf { it.isNotBlank() } ?: return null
@@ -70,7 +70,7 @@ class CursorProjectProvider(
             updatedAt = LocalSessionSupport.latest(startedAt, updatedAt),
             sourcePath = metadataFile.toAbsolutePath().normalize().toString(),
             metadata = title?.let { mapOf(TITLE_FIELD to it) }.orEmpty() +
-                prompts?.metadata().orEmpty(),
+                (prompts ?: UserMessageTally().takeIf { emptyChat })?.metadata().orEmpty(),
             statistics = statistics.snapshot().filterKeys { it != "editTurns" },
         )
     }

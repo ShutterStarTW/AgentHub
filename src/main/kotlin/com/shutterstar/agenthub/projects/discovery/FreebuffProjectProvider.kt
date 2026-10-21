@@ -17,7 +17,7 @@ import com.shutterstar.agenthub.AgentRuntime
  * `"variant":"user"`), the `chat-meta.json` sidecar (`messageCount`, `firstPrompt`, cut to 100 characters) and
  * `run-state.json`. The project folder name is only the *base name* of the project root, so the project path comes from
  * `run-state.json` (`sessionState.fileContext.projectRoot`, near the start of the file); a chat whose run state does not
- * name it is not listed rather than guessed. Chats without `chat-messages.json` or without a typed prompt are skipped.
+ * name it is not listed rather than guessed. Chats without `chat-messages.json` are skipped; a chat without a typed prompt is listed as an empty session.
  * The config dir is `~/.config/manicode`, or `FREEBUFF_CONFIG_DIR` (an absolute path).
  */
 class FreebuffProjectProvider(
@@ -42,7 +42,7 @@ class FreebuffProjectProvider(
                 if (session == null) skipped++ else sessions += session
             }
         }
-        if (skipped > 0) LOG.fine("[ProjectDiscovery] Freebuff: skipped $skipped chats without a project path or typed prompt")
+        if (skipped > 0) LOG.fine("[ProjectDiscovery] Freebuff: skipped $skipped chats without a project path")
         return LocalSessionSupport.deduplicate(sessions)
     }
 
@@ -50,7 +50,6 @@ class FreebuffProjectProvider(
         val chatId = chatDirectory.fileName.toString()
         val projectRoot = projectRoot(chatDirectory.resolve(RUN_STATE_FILE)) ?: return null
         val userMessages = countUserMessages(messages)
-        if (userMessages == 0) return null
         // The sidecar is optional (chats from before it existed have none).
         val firstPrompt = chatDirectory.resolve(META_FILE).takeIf { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
             ?.let { LocalSessionSupport.readBoundedText(it, MAX_META_CHARACTERS) }

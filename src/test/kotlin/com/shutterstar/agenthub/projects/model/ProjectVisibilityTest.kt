@@ -56,6 +56,31 @@ class ProjectVisibilityTest {
         assertTrue(ProjectVisibility.filter(listOf(project("p", agent("claude", recent)))) { false }.isEmpty())
     }
 
+    @Test
+    fun `empty sessions are dropped with the agents and projects that only had them`() {
+        val empty = AgentSession("e", "claude", "/p", null, old, null, messageCount = 0)
+        val named = AgentSession("n", "claude", "/p", null, recent, null, messageCount = 0, title = "Fan app")
+        val unknown = AgentSession("u", "claude", "/p", null, recent, null)
+        val mixed = project("mixed", AgentProject("claude", "p", 3, recent, listOf(empty, named, unknown)))
+        val onlyEmpty = project("only-empty", AgentProject("codex", "p", 1, old, listOf(empty)))
+        val untouched = project("untouched", AgentProject("claude", "p", 1, recent, listOf(unknown)))
+
+        val visible = ProjectVisibility.withoutEmptySessions(listOf(onlyEmpty, mixed, untouched))
+
+        assertEquals(setOf("mixed", "untouched"), visible.map { it.identity.id }.toSet())
+        val kept = visible.single { it.identity.id == "mixed" }.agents.single()
+        assertEquals(listOf("n", "u"), kept.sessions.map { it.id })
+        assertEquals(2, kept.sessionCount)
+        assertSame(untouched, visible.single { it.identity.id == "untouched" })
+    }
+
+    @Test
+    fun `a list without empty sessions is returned as is`() {
+        val list = listOf(project("p", AgentProject("claude", "p", 1, recent, listOf(AgentSession("u", "claude", "/p", null, recent, null)))))
+
+        assertSame(list, ProjectVisibility.withoutEmptySessions(list))
+    }
+
     private fun agent(id: String, activity: Instant) = AgentProject(id, "p", 1, activity, emptyList())
 
     private fun project(id: String, vararg agents: AgentProject) = DiscoveredProject(

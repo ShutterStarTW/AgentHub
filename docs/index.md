@@ -49,6 +49,8 @@ you review a plan and confirm it.
   sent and when it ran. **Resume** reopens a session of Antigravity, Claude Code, Cline, Codex CLI, Copilot CLI, Cursor CLI, Freebuff, Grok Build, Junie CLI,
   Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe, Oh My Pi, OpenCode or Qwen Code in a
   terminal; **Transcript** opens the session file. See [session statistics](session-statistics.md) for the per-session usage details.
+  Sessions whose file was deleted stay listed from Codex's state database or Claude's `history.jsonl`;
+  **Show deleted projects** and **Show empty sessions** in Settings > Behavior hide the rest.
 - **Environment** — skills, MCP servers, instruction files (`AGENTS.md`, `CLAUDE.md`,
   `.cursor/rules`, …) and configuration files per project or agent. Skills and MCP servers that
   exist under several agents are marked as identical or different. MCP secrets are never shown,

@@ -85,7 +85,7 @@ class FreebuffProjectProviderTest {
     }
 
     @Test
-    fun `should skip chats without messages a run state a typed prompt or a project root, and ignore the empty-chat placeholder`() {
+    fun `should skip chats without messages a run state or a project root, list chats without a typed prompt as empty, and ignore the empty-chat placeholder`() {
         val project = config.resolve("work/mixed").toString()
         chat("mixed", "2026-10-05T12-00-00.000Z", project, "[" + message("user", "Kept") + "]", firstPrompt = "(empty chat)")
         chat("mixed", "2026-10-05T12-00-01.000Z", project, null)
@@ -99,8 +99,12 @@ class FreebuffProjectProviderTest {
 
         val found = FreebuffProjectProvider(config).discover()
 
-        assertEquals(listOf("2026-10-05T12-00-00.000Z"), found.map { it.sessionId })
-        assertNull(found.single().metadata[UserMessageTally.FIRST_MESSAGE_KEY].takeIf { it == "(empty chat)" })
+        val bySession = found.associateBy { it.sessionId }
+        assertEquals(setOf("2026-10-05T12-00-00.000Z", "2026-10-05T12-00-03.000Z", "2026-10-05T12-00-04.000Z"), bySession.keys)
+        assertNull(bySession.getValue("2026-10-05T12-00-00.000Z").metadata[UserMessageTally.FIRST_MESSAGE_KEY].takeIf { it == "(empty chat)" })
+        assertEquals("1", bySession.getValue("2026-10-05T12-00-00.000Z").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("0", bySession.getValue("2026-10-05T12-00-03.000Z").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("0", bySession.getValue("2026-10-05T12-00-04.000Z").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
     }
 
     @Test

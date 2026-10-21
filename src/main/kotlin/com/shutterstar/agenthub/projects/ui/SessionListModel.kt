@@ -38,6 +38,8 @@ internal sealed interface SessionRowItem {
         val resumable: Boolean,
         /** Why [resumable] is false (unsupported agent, missing or unsafe ID); null when resumable. */
         val resumeBlockedReason: String? = null,
+        /** The title is the "Empty session" placeholder: drawn in the secondary colour like a deleted project. */
+        val muted: Boolean = false,
     ) : SessionRowItem
 }
 
@@ -113,7 +115,7 @@ internal object SessionListModel {
             ?: EMPTY_SESSION_TITLE.takeIf { session.messageCount == 0 }
             ?: timeLabel
 
-    private const val EMPTY_SESSION_TITLE = "Empty session"
+    const val EMPTY_SESSION_TITLE = "Empty session"
 
     /**
      * "2026. 04. 20. 08:05 - 09:05" within one day, "2026. 04. 20. 10:34 - 04. 21. 01:55" across
@@ -190,8 +192,13 @@ internal object SessionListModel {
                     title = title,
                     timeLabel = rangeLabel,
                     detail = sessionDetail(title, rangeLabel, session.messageCount),
-                    resumable = NativeResumeCommands.command(session.agentId, session.nativeResumeId) != null,
-                    resumeBlockedReason = NativeResumeCommands.unavailableReason(session.agentId, session.nativeResumeId),
+                    muted = session.isEmpty,
+                    resumable = !session.fromPromptHistory && NativeResumeCommands.command(session.agentId, session.nativeResumeId) != null,
+                    resumeBlockedReason = if (session.fromPromptHistory) {
+                        "The transcript file is gone; only the prompt history is left, which Claude Code cannot resume from"
+                    } else {
+                        NativeResumeCommands.unavailableReason(session.agentId, session.nativeResumeId)
+                    },
                 )
             }
     }

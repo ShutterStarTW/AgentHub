@@ -44,6 +44,108 @@ class CodexProjectProviderTest {
     }
 
     @Test
+    fun `lists threads from the state database whose rollout is gone`() {
+        val projectPath = homeDirectory.resolve("work/project")
+        writeRollout("sessions/2026/08/25/kept.jsonl", listOf(sessionMetadata("kept", projectPath.toString())))
+        Files.createFile(codexDirectory().resolve("state_4.sqlite"))
+        Files.createFile(codexDirectory().resolve("state_5.sqlite"))
+        var queried: Path? = null
+        val records = listOf(
+            CodexThreadRecord("kept", "C:\\ignored", "Duplicate", null, null, null),
+            CodexThreadRecord(
+                "gone", projectPath.toString(), "Fan app", "  Irj egy alkalmazast ",
+                Instant.parse("2026-08-07T12:07:49Z"), Instant.parse("2026-08-07T14:04:13Z"),
+                model = "gpt-5.4", tokensUsed = 2_139_767,
+                activity = CodexThreadActivity(userMessages = 3, toolCalls = 14, toolErrors = 2, subagentCalls = 1),
+            ),
+        )
+
+        val sessions = CodexProjectProvider(codexDirectory(), threadReader = { queried = it; records }).discover()
+
+        assertEquals("state_5.sqlite", queried?.fileName.toString())
+        assertEquals(setOf("kept", "gone"), sessions.map { it.sessionId }.toSet())
+        val gone = sessions.single { it.sessionId == "gone" }
+        assertEquals(projectPath.toString(), gone.rawProjectPath)
+        assertEquals(Instant.parse("2026-08-07T14:04:13Z"), gone.updatedAt)
+        assertEquals("Fan app", gone.metadata["title"])
+        assertEquals("Irj egy alkalmazast", gone.metadata[UserMessageTally.FIRST_MESSAGE_KEY])
+        assertEquals(codexDirectory().resolve("state_5.sqlite").toAbsolutePath().normalize().toString(), gone.sourcePath)
+        assertEquals("3", gone.metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("gpt-5.4", gone.statistics["models"])
+        assertEquals("2139767", gone.statistics["totalTokens"])
+        assertEquals("14", gone.statistics["toolCalls"])
+        assertEquals("2", gone.statistics["toolErrors"])
+        assertEquals("1", gone.statistics["subagentCalls"])
+        assertEquals("6984000", gone.statistics["elapsedMillis"])
+        assertNull(sessions.single { it.sessionId == "kept" }.metadata["title"])
+    }
+
+    @Test
+    fun `database threads without any prompt are empty sessions`() {
+        Files.createDirectories(codexDirectory())
+        Files.createFile(codexDirectory().resolve("state_5.sqlite"))
+        val records = listOf(
+            CodexThreadRecord("blank", "/work/a", null, null, null, null),
+            CodexThreadRecord("named", "/work/b", "Fan app", null, null, null),
+            CodexThreadRecord("asked", "/work/c", null, "Irj egy appot", null, null),
+            CodexThreadRecord("noprompt", "/work/d", null, null, null, null, activity = CodexThreadActivity(userMessages = 0, toolCalls = 2)),
+        )
+
+        val sessions = CodexProjectProvider(codexDirectory(), threadReader = { records }).discover().associateBy { it.sessionId }
+
+        assertEquals("0", sessions.getValue("blank").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertNull(sessions.getValue("named").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertNull(sessions.getValue("asked").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("0", sessions.getValue("noprompt").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+    }
+
+    @Test
+    fun `an unreadable state database does not hide the rollout sessions`() {
+        val projectPath = homeDirectory.resolve("work/project")
+        writeRollout("sessions/2026/08/25/kept.jsonl", listOf(sessionMetadata("kept", projectPath.toString())))
+        Files.createFile(codexDirectory().resolve("state_5.sqlite"))
+
+        val sessions = CodexProjectProvider(codexDirectory(), threadReader = { error("locked") }).discover()
+
+        assertEquals(listOf("kept"), sessions.map { it.sessionId })
+    }
+
+    @Test
+    fun `thread reader decodes rows and strips the extended path prefix`() {
+        fun hex(text: String) = text.toByteArray().joinToString("") { "%02x".format(it) }
+        val row = listOf(hex("t1"), hex("\\\\?\\K:\\work"), hex("Name"), hex("First"), "1786104469", "1786111453", hex("gpt-5.4"), "2139767").joinToString("\t")
+        val activityRows = listOf(
+            listOf(hex("t1"), "userMessage", "3", "0"),
+            listOf(hex("t1"), "commandExecution", "10", "2"),
+            listOf(hex("t1"), "fileChange", "4", "0"),
+            listOf(hex("t1"), "collabAgentToolCall", "1", "0"),
+        ).joinToString("\n") { it.joinToString("\t") }
+        val commands = mutableListOf<String>()
+
+        val records = CodexThreadDatabaseReader(
+            commandRunner = { command, _ ->
+                commands += command.last()
+                when {
+                    command.last().contains("thread_items") -> activityRows
+                    command.last().contains("first_user_message") -> null
+                    else -> row + "\nbroken\tline"
+                }
+            },
+            historyDatabase = { homeDirectory.resolve("thread_history_1.sqlite") },
+        ).readThreads(homeDirectory.resolve("state_5.sqlite"))
+
+        assertEquals(3, commands.size)
+        val record = records.single()
+        assertEquals("gpt-5.4", record.model)
+        assertEquals(2139767L, record.tokensUsed)
+        assertEquals(CodexThreadActivity(userMessages = 3, toolCalls = 14, toolErrors = 2, subagentCalls = 1), record.activity)
+        assertEquals("t1", record.id)
+        assertEquals("K:\\work", record.cwd)
+        assertEquals("Name", record.title)
+        assertEquals(Instant.ofEpochSecond(1786104469), record.createdAt)
+    }
+
+    @Test
     fun `malformed and incomplete rollouts do not abort discovery`() {
         val projectPath = homeDirectory.resolve("work/valid")
         writeRollout("sessions/2026/08/20/broken.jsonl", listOf("not-json", "{unfinished"))

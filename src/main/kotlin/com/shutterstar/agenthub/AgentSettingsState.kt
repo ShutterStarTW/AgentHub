@@ -24,6 +24,10 @@ class AgentSettingsState : PersistentStateComponent<AgentSettingsState.State> {
         var outdatedAgentIds: MutableList<String> = mutableListOf(),
         var unverifiedAgentIds: MutableList<String> = mutableListOf(),
         var runInBackground: Boolean = true,
+        /** Projects whose directory no longer exists stay in the lists unless this is turned off. */
+        var showDeletedProjects: Boolean = true,
+        /** Sessions with no recorded prompt and no name stay in the lists unless this is turned off. */
+        var showEmptySessions: Boolean = true,
         var defaultsApplied: Boolean = false,
         var activeCompanionIds: MutableList<String> = mutableListOf(),
         var useWsl: Boolean = false,
@@ -280,6 +284,30 @@ class AgentSettingsState : PersistentStateComponent<AgentSettingsState.State> {
         private set
 
     private val detectionListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    private val projectViewListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    val showDeletedProjects: Boolean get() = state.showDeletedProjects
+
+    /** Listener runs on the thread that changed the setting — marshal to the EDT yourself. */
+    fun addProjectViewListener(listener: () -> Unit): AutoCloseable {
+        projectViewListeners += listener
+        return AutoCloseable { projectViewListeners -= listener }
+    }
+
+    val showEmptySessions: Boolean get() = state.showEmptySessions
+
+    fun setShowDeletedProjects(show: Boolean) {
+        if (state.showDeletedProjects == show) return
+        state.showDeletedProjects = show
+        projectViewListeners.forEach { listener -> runCatching { listener() } }
+    }
+
+    fun setShowEmptySessions(show: Boolean) {
+        if (state.showEmptySessions == show) return
+        state.showEmptySessions = show
+        projectViewListeners.forEach { listener -> runCatching { listener() } }
+    }
 
     /** Listener runs on whichever thread changed the detection state — marshal to the EDT yourself. */
     fun addDetectionListener(listener: () -> Unit): AutoCloseable {

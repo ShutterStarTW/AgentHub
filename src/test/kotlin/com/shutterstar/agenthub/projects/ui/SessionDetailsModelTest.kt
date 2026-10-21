@@ -51,4 +51,31 @@ class SessionDetailsModelTest {
             "toolCalls" to "-2", "inputTokens" to "secret", "elapsedMillis" to "NaN",
         )))
     }
+
+    @Test
+    fun `should mark Codex sessions listed from the state database`() {
+        val fallback = AgentSession("s", "codex", "/project", null, null, "/home/.codex/state_5.sqlite")
+        val rollout = AgentSession("s", "codex", "/project", null, null, "/home/.codex/sessions/rollout.jsonl")
+        val otherAgent = AgentSession("s", "opencode", "/project", null, null, "/data/opencode.sqlite")
+
+        assertTrue(fallback.fromFallbackSource)
+        assertFalse(rollout.fromFallbackSource)
+        assertFalse(otherAgent.fromFallbackSource)
+        assertTrue(SessionDetailsModel.lines(fallback) { it.toString() }.contains("Database: /home/.codex/state_5.sqlite (rollout file missing)"))
+        assertTrue(SessionDetailsModel.lines(rollout) { it.toString() }.any { it.startsWith("Transcript:") })
+        assertTrue(otherAgent.sourceIsDatabase)
+        assertFalse(rollout.sourceIsDatabase)
+        assertTrue(SessionDetailsModel.lines(otherAgent) { it.toString() }.contains("Database: /data/opencode.sqlite"))
+    }
+
+    @Test
+    fun `should mark Claude sessions listed from the prompt history and block their resume`() {
+        val history = AgentSession("s", "claude", "/project", null, null, "C:\\Users\\me\\.claude\\history.jsonl")
+        val transcript = AgentSession("s", "claude", "/project", null, null, "C:\\Users\\me\\.claude\\projects\\p\\s.jsonl")
+
+        assertTrue(history.fromPromptHistory)
+        assertFalse(transcript.fromPromptHistory)
+        assertTrue(SessionDetailsModel.lines(history) { it.toString() }.any { it.startsWith("History: ") && it.endsWith("(transcript file missing)") })
+        assertTrue(SessionDetailsModel.lines(transcript) { it.toString() }.any { it.startsWith("Transcript: ") })
+    }
 }

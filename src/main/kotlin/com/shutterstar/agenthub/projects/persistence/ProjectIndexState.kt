@@ -17,6 +17,7 @@ data class ProjectIndexProjectState(
     var gitRoot: String? = null,
     var gitRemote: String? = null,
     var currentBranch: String? = null,
+    var missing: Boolean = false,
     var agents: MutableList<ProjectIndexAgentState> = mutableListOf(),
 )
 

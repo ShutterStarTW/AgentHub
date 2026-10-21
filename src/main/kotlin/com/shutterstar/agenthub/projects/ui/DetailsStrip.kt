@@ -10,7 +10,7 @@ import javax.swing.text.DefaultCaret
 
 /**
  * The gray info strip under the Environment and Sessions tables: wrapped text that is as tall as its
- * content (up to [MAX_HEIGHT]) and scrolls only beyond that. The height is measured from the
+ * content (up to [MAX_LINES] lines) and scrolls only beyond that. The height is measured from the
  * PARENT's width, not from this component's own (still unassigned on first show) width, so it is
  * right on the very first layout.
  */
@@ -61,7 +61,10 @@ internal class DetailsStrip(accessibleName: String) : JBScrollPane() {
         val outer = (parent?.width?.takeIf { it > 0 } ?: width.takeIf { it > 0 } ?: JBUI.scale(DEFAULT_WIDTH))
         val inner = (outer - (borderInsets?.left ?: 0) - (borderInsets?.right ?: 0)).coerceAtLeast(1)
         val wanted = text.heightForWidth(inner) + (borderInsets?.top ?: 0) + (borderInsets?.bottom ?: 0)
-        return Dimension(0, minOf(wanted, JBUI.scale(MAX_HEIGHT)))
+        val textInsets = text.insets
+        val maxHeight = text.getFontMetrics(text.font).height * MAX_LINES + textInsets.top + textInsets.bottom +
+            (borderInsets?.top ?: 0) + (borderInsets?.bottom ?: 0)
+        return Dimension(0, minOf(wanted, maxHeight))
     }
 
     private class WrappedText : WidthAwareTextArea() {
@@ -69,7 +72,7 @@ internal class DetailsStrip(accessibleName: String) : JBScrollPane() {
     }
 
     private companion object {
-        const val MAX_HEIGHT = 160
+        const val MAX_LINES = 5
         const val DEFAULT_WIDTH = 400
     }
 }

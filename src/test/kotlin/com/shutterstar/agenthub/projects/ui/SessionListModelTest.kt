@@ -163,6 +163,27 @@ class SessionListModelTest {
     }
 
     @Test
+    fun `only the empty session placeholder is muted`() {
+        fun rows(vararg sessions: AgentSession) = SessionListModel.byAgent(
+            project("a", "Alpha", relation("cursor", "a", *sessions)),
+            setOf("agent:cursor"),
+            { it },
+            format,
+            utc,
+        ).filterIsInstance<SessionRowItem.Session>().associateBy { it.session.id }
+
+        val items = rows(
+            session("empty", "cursor", t1).copy(messageCount = 0),
+            session("named", "cursor", t1).copy(messageCount = 0, title = "Fan app"),
+            session("unknown", "cursor", t1),
+        )
+
+        assertEquals(true, items.getValue("empty").muted)
+        assertEquals(false, items.getValue("named").muted)
+        assertEquals(false, items.getValue("unknown").muted)
+    }
+
+    @Test
     fun `dateRangeLabel shortens the end side by what it shares with the start`() {
         fun at(value: String) = Instant.parse(value)
         fun range(from: String?, to: String?) = SessionListModel.dateRangeLabel(from?.let(::at), to?.let(::at), utc)

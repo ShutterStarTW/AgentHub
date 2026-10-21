@@ -31,7 +31,16 @@ internal object SessionDetailsModel {
                 }
             }
         }
-        session.sourcePath?.takeIf { it.isNotBlank() }?.let { add("Transcript: $it") }
+        session.sourcePath?.takeIf { it.isNotBlank() }?.let {
+            add(
+                when {
+                    session.fromPromptHistory -> "History: $it (transcript file missing)"
+                    session.fromFallbackSource -> "Database: $it (rollout file missing)"
+                    session.sourceIsDatabase -> "Database: $it"
+                    else -> "Transcript: $it"
+                },
+            )
+        }
     }
 
     fun summary(session: AgentSession): String? {

@@ -5,6 +5,7 @@ import com.shutterstar.agenthub.projects.model.AgentProject
 import com.shutterstar.agenthub.projects.model.AgentSession
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectComparators
+import com.shutterstar.agenthub.projects.model.ProjectPathResolver
 import com.shutterstar.agenthub.projects.model.RawAgentProject
 import com.shutterstar.agenthub.projects.resolve.ProjectResolver
 import com.shutterstar.agenthub.projects.resolve.ResolvedProject
@@ -113,6 +114,9 @@ class ProjectDiscoveryService(
                     currentBranch = representative.project.currentBranch,
                     agents = agentProjects,
                     lastActivity = agentProjects.mapNotNull { it.lastActivity }.maxOrNull(),
+                    missing = ProjectPathResolver.isMissing(
+                        listOf(representative.project.path, representative.project.identity.gitRoot, representative.project.identity.canonicalPath),
+                    ),
                 )
             }
             .sortedWith(ProjectComparators.discoveredProjectByRecency)

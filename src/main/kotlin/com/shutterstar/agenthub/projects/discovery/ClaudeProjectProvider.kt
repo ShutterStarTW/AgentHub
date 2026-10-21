@@ -3,6 +3,7 @@ package com.shutterstar.agenthub.projects.discovery
 import com.shutterstar.agenthub.environment.discovery.EnvHomeDirectorySupport
 import com.shutterstar.agenthub.projects.discovery.LocalSessionSupport.latest
 import com.shutterstar.agenthub.projects.model.RawAgentProject
+import com.shutterstar.agenthub.projects.model.SessionStatistics
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -20,9 +21,12 @@ class ClaudeProjectProvider(
 ) : AgentProjectProvider {
     override val agentId: String = AGENT_ID
 
-    private val projectsDirectory = EnvHomeDirectorySupport.resolveGuarded("CLAUDE_CONFIG_DIR", homeDirectory, CLAUDE_DIRECTORY).resolve(PROJECTS_DIRECTORY)
+    private val claudeDirectory = EnvHomeDirectorySupport.resolveGuarded("CLAUDE_CONFIG_DIR", homeDirectory, CLAUDE_DIRECTORY)
+    private val projectsDirectory = claudeDirectory.resolve(PROJECTS_DIRECTORY)
+    private val historyFile = claudeDirectory.resolve(HISTORY_FILE)
 
-    override fun isAvailable(): Boolean = Files.isDirectory(projectsDirectory, LinkOption.NOFOLLOW_LINKS)
+    override fun isAvailable(): Boolean = Files.isDirectory(projectsDirectory, LinkOption.NOFOLLOW_LINKS) ||
+        Files.isRegularFile(historyFile, LinkOption.NOFOLLOW_LINKS)
 
     override fun discover(): List<RawAgentProject> {
         if (!isAvailable()) return emptyList()
@@ -30,7 +34,7 @@ class ClaudeProjectProvider(
         var skippedSessions = 0
         var remainingSessionEntries = maxSessionEntries.coerceAtLeast(0)
         val sessions = mutableListOf<RawAgentProject>()
-        Files.list(projectsDirectory).use { projectDirectories ->
+        if (Files.isDirectory(projectsDirectory, LinkOption.NOFOLLOW_LINKS)) Files.list(projectsDirectory).use { projectDirectories ->
             projectDirectories
                 .limit(maxProjectDirectoryEntries.coerceAtLeast(0).toLong())
                 .filter { Files.isDirectory(it, LinkOption.NOFOLLOW_LINKS) }
@@ -46,7 +50,59 @@ class ClaudeProjectProvider(
         if (skippedSessions > 0) {
             LOG.fine("[ProjectDiscovery] Claude: skipped $skippedSessions malformed or unreadable sessions")
         }
+        sessions += historyOnlySessions(sessions.mapTo(hashSetOf()) { it.sessionId })
         return LocalSessionSupport.deduplicate(sessions)
+    }
+
+    /**
+     * Claude Code deletes transcripts after `cleanupPeriodDays`, but `history.jsonl` keeps every typed prompt with its
+     * session id, project and time. A session without a transcript is still listed from it (prompts and times only:
+     * the history has no model, tokens or tool calls, and `claude --resume` needs the transcript).
+     */
+    private fun historyOnlySessions(knownSessionIds: Set<String>): List<RawAgentProject> {
+        if (!Files.isRegularFile(historyFile, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        val bySession = linkedMapOf<String, HistorySession>()
+        runCatching {
+            LocalSessionSupport.scanHeaderLines(historyFile, MAX_HISTORY_LINES, MAX_HISTORY_LINE_CHARACTERS, HISTORY_CHARACTER_BUDGET) { line ->
+                val fields = MetadataJsonParser.topLevelStringFields(line, HISTORY_STRING_FIELDS)
+                val sessionId = fields[SESSION_ID_FIELD]?.takeIf { it.isNotBlank() && it !in knownSessionIds } ?: return@scanHeaderLines false
+                val project = fields[PROJECT_FIELD]?.takeIf { it.isNotBlank() } ?: return@scanHeaderLines false
+                val time = MetadataJsonParser.topLevelLongFields(line, setOf(TIMESTAMP_FIELD))[TIMESTAMP_FIELD]
+                    ?.takeIf { it > 0 }?.let { runCatching { Instant.ofEpochMilli(it) }.getOrNull() }
+                val session = bySession.getOrPut(sessionId) { HistorySession(project) }
+                time?.let { if (session.first == null || it < session.first!!) session.first = it }
+                time?.let { if (session.last == null || it > session.last!!) session.last = it }
+                fields[DISPLAY_FIELD]?.takeUnless { it.isBlank() || it.trimStart().startsWith("/") }?.let { session.tally.add(it) }
+                false
+            }
+        }.onFailure { LOG.fine("[ProjectDiscovery] Claude: the prompt history could not be read") }
+        val historyPath = historyFile.toAbsolutePath().normalize().toString()
+        return bySession.map { (sessionId, session) ->
+            val start = session.first
+            val end = session.last
+            RawAgentProject(
+                agentId = agentId,
+                rawProjectPath = session.project,
+                sessionId = sessionId,
+                startedAt = start,
+                updatedAt = latest(start, end),
+                sourcePath = historyPath,
+                metadata = session.tally.metadata(),
+                statistics = SessionStatistics.sanitize(
+                    buildMap {
+                        start?.let { put("firstEventMillis", it.toEpochMilli().toString()) }
+                        end?.let { put("lastEventMillis", it.toEpochMilli().toString()) }
+                        if (start != null && end != null) put("elapsedMillis", (end.toEpochMilli() - start.toEpochMilli()).toString())
+                    },
+                ),
+            )
+        }
+    }
+
+    private class HistorySession(val project: String) {
+        var first: Instant? = null
+        var last: Instant? = null
+        val tally = UserMessageTally()
     }
 
     private fun discoverProjectDirectory(projectDirectory: Path, entryLimit: Int): ProjectDirectoryScan {
@@ -155,6 +211,13 @@ class ClaudeProjectProvider(
         private const val AGENT_ID = "claude"
         private const val CLAUDE_DIRECTORY = ".claude"
         private const val PROJECTS_DIRECTORY = "projects"
+        private const val HISTORY_FILE = "history.jsonl"
+        private const val MAX_HISTORY_LINES = 500_000
+        private const val MAX_HISTORY_LINE_CHARACTERS = 256 * 1024
+        private const val HISTORY_CHARACTER_BUDGET = 128 * 1024 * 1024
+        private const val PROJECT_FIELD = "project"
+        private const val DISPLAY_FIELD = "display"
+        private val HISTORY_STRING_FIELDS = setOf(SESSION_ID_FIELD, PROJECT_FIELD, DISPLAY_FIELD)
         private const val JSONL_EXTENSION = "jsonl"
         private const val MAX_PROJECT_DIRECTORY_ENTRIES = 20_000
         private const val MAX_SESSION_ENTRIES = 50_000

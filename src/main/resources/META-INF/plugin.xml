@@ -130,6 +130,14 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>1.3.5</b></p>
+        <ul>
+            <li>Sessions whose transcript was deleted stay listed: Codex CLI from its state database, Claude Code from <code>history.jsonl</code>. They are marked <b>Database</b> or <b>History</b>.</li>
+            <li>Projects whose directory no longer exists are marked <b>(deleted)</b>. New settings <b>Show deleted projects</b> and <b>Show empty sessions</b>.</li>
+            <li>Empty sessions show as <i>Empty session</i> for every agent.</li>
+            <li><b>Resume</b> warns when the session is already open in a running process; tab titles are one line, 30 characters.</li>
+            <li>The info strip under the tables shows 5 lines.</li>
+        </ul>
         <p><b>1.3.4</b></p>
         <ul>
             <li>Settings: a <b>status filter</b> (All / Installed / Not installed / Update available) on the agent and companion tables; updatable agents are listed first.</li>

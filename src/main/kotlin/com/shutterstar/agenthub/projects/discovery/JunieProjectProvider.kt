@@ -14,8 +14,8 @@ import com.shutterstar.agenthub.AgentRuntime
  * milliseconds, `projectDir`, `lifecycle`) plus `events.jsonl`, where every typed prompt is a `UserPromptEvent` record
  * (`prompt`, `presentablePrompt`). `sessions/index.jsonl` repeats the summary of each session and is the fallback when a
  * session folder has no `summary.json`. `transcript.md` is not read. A folder with nothing but an empty transcript (a
- * session that never ran a task) has no summary and is not listed, and neither is a session whose event stream holds no
- * prompt. The junie home is `~/.junie`, or `JUNIE_HOME` (docs: junie.jetbrains.com/docs/environment-variables.html).
+ * session that never ran a task) has no summary and is not listed; a session with a summary but no prompt is an empty
+ * session. The junie home is `~/.junie`, or `JUNIE_HOME` (docs: junie.jetbrains.com/docs/environment-variables.html).
  */
 class JunieProjectProvider(
     private val junieHome: Path = defaultJunieHome(),
@@ -82,8 +82,6 @@ class JunieProjectProvider(
             if (prompt[KIND_FIELD] != USER_PROMPT_KIND) return@scanJsonl
             add(prompt[PRESENTABLE_PROMPT_FIELD] ?: prompt[PROMPT_FIELD])
         }
-        // A readable event stream without a single prompt is a session that never ran a task.
-        if (tally != null && tally.count == 0) return null
         val createdAt = LocalSessionSupport.epochTimestamp(summary.createdAt?.takeIf { it > 0 })
         val updatedAt = LocalSessionSupport.epochTimestamp(summary.updatedAt?.takeIf { it > 0 })
         return RawAgentProject(

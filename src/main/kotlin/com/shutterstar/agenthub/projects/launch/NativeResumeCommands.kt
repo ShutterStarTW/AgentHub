@@ -71,6 +71,9 @@ object NativeResumeCommands {
 
     fun supports(agentId: String): Boolean = agentId in templates
 
+    /** The executable a resumed session runs under (`claude`, `cursor-agent`, ...); null for an agent without resume. */
+    fun launchWord(agentId: String): String? = templates[agentId]?.command
+
     /** Why [command] returns null for this session; null when the session can be resumed. */
     fun unavailableReason(agentId: String, nativeResumeId: String?): String? = when {
         agentId !in templates -> "AgentHub does not know a native resume command for this agent yet"

@@ -329,7 +329,19 @@ internal class SessionsPanel(
                         value.resumeBlockedReason ?: NOT_RESUMABLE_TOOLTIP
                     }
                     transcriptLink.foreground = if (value.session.sourcePath != null) linkColor else JBColor.GRAY
-                    transcriptLink.toolTipText = value.session.sourcePath?.let { "Open $it (Shift+Enter)" } ?: "No transcript file recorded"
+                    transcriptLink.text = when {
+                        value.session.fromPromptHistory -> "History"
+                        value.session.sourceIsDatabase -> "Database"
+                        else -> "Transcript"
+                    }
+                    transcriptLink.toolTipText = value.session.sourcePath?.let {
+                        when {
+                            value.session.fromPromptHistory -> "Transcript file missing, listed from the Claude prompt history: $it"
+                            value.session.fromFallbackSource -> "Rollout file missing, listed from the Codex database: $it"
+                            value.session.sourceIsDatabase -> "Open the session database $it (Shift+Enter)"
+                            else -> "Open $it (Shift+Enter)"
+                        }
+                    } ?: "No transcript file recorded"
                     content.border = JBUI.Borders.empty(
                         AgentHubUiComponents.ROW_TEXT_PADDING,
                         AgentHubUiComponents.ROW_TEXT_PADDING + SESSION_INDENT,
@@ -342,7 +354,7 @@ internal class SessionsPanel(
             }
             wrapper.background = list.background
             wrapper.selectionColor = AgentHubUiComponents.rowHighlight(isSelected, hover.isHovered(index))
-            titleLabel.foreground = colors.foreground
+            titleLabel.foreground = if ((value as? SessionRowItem.Session)?.muted == true) colors.secondaryForeground else colors.foreground
             detailLabel.foreground = if (isSelected) colors.secondaryForeground else JBColor.GRAY
             statisticsLabel.foreground = detailLabel.foreground
             WrappedRowText.prepareRow(list, wrapper, content, listOf(detailLabel, statisticsLabel))

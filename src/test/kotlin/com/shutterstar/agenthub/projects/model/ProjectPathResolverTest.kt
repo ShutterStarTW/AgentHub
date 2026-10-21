@@ -13,6 +13,17 @@ class ProjectPathResolverTest {
     lateinit var tempDirectory: Path
 
     @Test
+    fun `a project is missing only when every recorded location is gone`() {
+        val existing = Files.createDirectories(tempDirectory.resolve("existing"))
+        val gone = tempDirectory.resolve("gone").toString()
+
+        assertEquals(true, ProjectPathResolver.isMissing(listOf(gone, null, gone)))
+        assertEquals(false, ProjectPathResolver.isMissing(listOf(gone, existing.toString())))
+        assertEquals(false, ProjectPathResolver.isMissing(listOf(existing.toString())))
+        assertEquals(false, ProjectPathResolver.isMissing(listOf(null, " ")))
+    }
+
+    @Test
     fun `resolves an existing path directly`() {
         val existing = Files.createDirectories(tempDirectory.resolve("existing"))
 

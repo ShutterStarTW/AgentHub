@@ -64,18 +64,21 @@ class JunieProjectProviderTest {
     }
 
     @Test
-    fun `should skip empty sessions and sessions with a malformed summary`() {
+    fun `should skip folders without a summary and malformed summaries, and list sessions without a prompt as empty`() {
         val project = home.resolve("work/mixed").toString()
         session("session-1-kept", project, events = listOf(prompt("Go")))
         // A session that never ran a task: only a transcript, no summary.
         session("session-2-empty", null, summary = false)
-        // A readable event stream without any prompt.
+        // A readable event stream without any prompt: listed as an empty session.
         session("session-3-noprompt", project, events = listOf("""{"kind":"TaskStartedEvent","taskId":"t","timestampMs":1}"""))
         // Malformed and incomplete summaries.
         Files.writeString(session("session-4-broken", project).resolve("summary.json"), "{not json")
         session("session-5-nodir", null, events = listOf(prompt("Lost")))
 
-        assertEquals(listOf("session-1-kept"), JunieProjectProvider(home).discover().map { it.sessionId })
+        val found = JunieProjectProvider(home).discover().associateBy { it.sessionId }
+
+        assertEquals(setOf("session-1-kept", "session-3-noprompt"), found.keys)
+        assertEquals("0", found.getValue("session-3-noprompt").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
     }
 
     @Test

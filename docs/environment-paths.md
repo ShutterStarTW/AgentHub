@@ -66,7 +66,8 @@ when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. Th
   `AGENTS.md`.
 - **MCP:** global `~/.claude.json` (`$CLAUDE_CONFIG_DIR/.claude.json` when the variable is
   set); project `<project>/.mcp.json` and matching project entries in that same file.
-- **Sessions:** `$CLAUDE_CONFIG_DIR/projects/` (default `~/.claude/projects/`).
+- **Sessions:** `$CLAUDE_CONFIG_DIR/projects/` (default `~/.claude/projects/`). A session whose transcript is gone is
+  listed from `$CLAUDE_CONFIG_DIR/history.jsonl` (prompts and times only; no Resume).
 
 ## Cline
 
@@ -91,7 +92,8 @@ when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. Th
   directory, with the override taking priority within that directory.
 - **MCP:** global `$CODEX_HOME/config.toml`; project `<project>/.codex/config.toml`.
 - **Sessions:** `$CODEX_HOME/sessions/` and `$CODEX_HOME/archived_sessions/` (`rollout-*.jsonl`); user-assigned thread
-  names come from `$CODEX_HOME/session_index.jsonl`.
+  names come from `$CODEX_HOME/session_index.jsonl`. A thread whose rollout file is gone is listed from
+  `$CODEX_HOME/state_<n>.sqlite` and `thread_history_<n>.sqlite`.
 
 ## GitHub Copilot CLI
 

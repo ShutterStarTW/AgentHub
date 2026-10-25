@@ -89,11 +89,12 @@ folders, with backups and rollback.
 | [Amp](https://ampcode.com)                                                     | `amp`        | Sourcegraph | `npm install -g @ampcode/cli`                                                   |
 | [Antigravity CLI](https://antigravity.google/product/antigravity-cli)         | `agy`        | Google      | `curl -fsSL https://antigravity.google/cli/install.sh \| bash`                  |
 | [Auggie](https://www.augmentcode.com/product/cli)                              | `auggie`     | Augment     | `npm install -g @augmentcode/auggie`                                            |
+| [Autohand Code](https://autohand.ai/cli/)                                      | `autohand`   | Autohand    | `npm install -g autohand-cli`                                                   |
 | [Claude Code](https://claude.com/product/claude-code)                          | `claude`     | Anthropic   | `npm install -g @anthropic-ai/claude-code`                                      |
 | [Cline](https://cline.bot/cli)                                                 | `cline`      | Cline       | `npm install -g cline`                                                          |
 | [CodeBuddy](https://www.codebuddy.ai)                                          | `codebuddy`  | Tencent      | `npm install -g @tencent-ai/codebuddy-code`                                     |
+| [Codebuff](https://www.codebuff.com)                                           | `codebuff`   | Codebuff    | `npm install -g codebuff`                                                       |
 | [Codex CLI](https://openai.com/codex)                                          | `codex`      | OpenAI      | `npm install -g @openai/codex`                                                  |
-| [Cody CLI](https://sourcegraph.com/docs/cody)                                       | `cody`       | Sourcegraph | `npm install -g @sourcegraph/cody`                                              |
 | [Command Code](https://commandcode.ai)                                         | `cmd`        | Command Code | `npm install -g command-code`                                                   |
 | [Continue CLI](https://continue.dev)                                           | `cn`         | Continue    | `npm install -g @continuedev/cli`                                               |
 | [Copilot CLI](https://github.com/features/copilot/cli)                         | `copilot`    | GitHub      | `npm install -g @github/copilot`                                                |
@@ -105,25 +106,24 @@ folders, with backups and rollback.
 | [Freebuff](https://freebuff.com/cli)                                           | `freebuff`   | Codebuff    | `npm install -g freebuff`                                                       |
 | [Goose CLI](https://goose-docs.ai)                                             | `goose`      | Block       | `curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh \| bash` |
 | [Grok Build](https://x.ai/build)                                                 | `grok`       | xAI         | `npm install -g @xai-official/grok`                                             |
-| [iFlow CLI](https://iflow.cn)                                                  | `iflow`      | iFlow       | `npm install -g @iflow-ai/iflow-cli`                                            |
+| [Hermes Agent](https://hermes-agent.nousresearch.com)                          | `hermes`     | Nous Research | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash`        |
 | [Junie CLI](https://junie.jetbrains.com)                                       | `junie`      | JetBrains   | `npm install -g @jetbrains/junie`                                               |
 | [Kilo Code](https://kilo.ai)                                                   | `kilo`       | Kilo        | `npm install -g @kilocode/cli`                                                  |
 | [Kimi Code](https://www.kimi.com/code)                                         | `kimi`       | Moonshot AI | `npm install -g @moonshot-ai/kimi-code`                                          |
 | [Kiro CLI](https://kiro.dev/cli/)                                              | `kiro-cli`   | Kiro        | `curl -fsSL https://cli.kiro.dev/install \| bash`                               |
 | [Kode](https://www.npmjs.com/package/@shareai-lab/kode)                        | `kode`       | shareAI-lab | `npm install -g @shareai-lab/kode`                                             |
 | [LeanCTL](https://leanctl.com)                                                 | `leanctl`    | LeanCTL     | `npm install -g leanctl-bin`                                                    |
+| [Letta Code](https://docs.letta.com/letta-code)                                 | `letta`      | Letta       | `npm install -g @letta-ai/letta-code`                                           |
 | [MiMo Code](https://mimo.xiaomi.com/mimocode)                                  | `mimo`       | Xiaomi      | `npm install -g @mimo-ai/cli`                                                   |
 | [Mistral Vibe](https://mistral.ai/products/vibe)                               | `vibe`       | Mistral AI  | `pip install mistral-vibe`                                                      |
 | [Muse Code](https://dev.meta.ai/products/muse-code)                 | `muse`       | Meta        | `curl -fsSL https://dev.meta.ai/install.sh \| bash`                             |
 | [Oh My Pi](https://omp.sh)                                                     | `omp`        | can1357     | `npm install -g @oh-my-pi/pi-coding-agent`                                      |
 | [OpenClaw](https://openclaw.ai)                                                | `openclaw`   | OpenClaw    | `npm install -g openclaw`                                                       |
-| [OpenCode](https://opencode.ai)                                                | `opencode`   | SST         | `npm install -g opencode-ai`                                                    |
+| [OpenCode](https://opencode.ai)                                                | `opencode`   | SST         | `npm install -g @opencode/cli`                                                  |
 | [OpenHands](https://www.openhands.dev/)                                            | `openhands`  | All Hands   | `pip install openhands-ai`                                                      |
-| [Pi](https://pi.dev)                                                           | `pi`         | Mario Zechner | `npm install -g @mariozechner/pi-coding-agent`                                |
-| [Qodo](https://www.qodo.ai/)                                                       | `qodo`       | Qodo        | `npm install -g @qodo/command`                                                  |
+| [Pi](https://pi.dev)                                                           | `pi`         | Mario Zechner | `npm install -g @earendil-works/pi-coding-agent`                                |
 | [Qoder CLI](https://qoder.com)                                                 | `qodercli`   | Qoder AI    | `npm install -g @qoder-ai/qodercli`                                             |
 | [Qwen Code](https://qwen.ai/qwencode)                                          | `qwen`       | Alibaba     | `npm install -g @qwen-code/qwen-code@latest`                                    |
-| [SWE-agent](https://swe-agent.com)                                             | `sweagent`   | SWE-agent   | `pip install sweagent`                                                          |
 | [VT Code](https://vinhnx.github.io/)                                           | `vtcode`     | vinhnx      | `npm install -g @vinhnx/vtcode --registry=https://npm.pkg.github.com`           |
 
 > **Note:** Command Code, LeanCTL, and Muse Code are hidden on Windows (they have no native Windows build, or their launch command collides with a built-in Windows command).

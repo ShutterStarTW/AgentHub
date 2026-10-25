@@ -4,13 +4,13 @@
 
 ```shell
 # Install with npm
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-works/pi-coding-agent
 
 # Update to latest version
-npm update --quiet --no-fund -g @mariozechner/pi-coding-agent
+npm update --quiet --no-fund -g @earendil-works/pi-coding-agent
 
 # Uninstall
-npm uninstall -g @mariozechner/pi-coding-agent
+npm uninstall -g @earendil-works/pi-coding-agent
 ```
 
 > via [pi.dev](https://pi.dev) &middot; [github.com/earendil-works/pi](https://github.com/earendil-works/pi)

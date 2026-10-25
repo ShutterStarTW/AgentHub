@@ -34,4 +34,15 @@ class CodingAgentsTest {
                 assertTrue(parts.last().isNotBlank(), "blank package name in npm updateHint for: ${it.id}")
             }
     }
+
+    @Test
+    fun `opencode installs and updates the 2x package and checks its version`() {
+        val opencode = CodingAgents.all.single { it.id == "opencode" }
+        assertEquals("npm install -g @opencode/cli", opencode.installHint)
+        assertEquals("npm update --quiet --no-fund -g @opencode/cli", opencode.updateHint)
+        assertEquals("npm uninstall -g @opencode/cli", opencode.uninstallHint)
+        assertEquals(VersionSource(VersionSource.Kind.NPM, "@opencode/cli"), opencode.resolvedVersionSource)
+        assertTrue("@opencode\\cli\\postinstall.mjs" in opencode.postUpdateHintWindows.orEmpty())
+        assertTrue("@opencode\\cli\\postinstall.mjs" in opencode.installHintWindows.orEmpty())
+    }
 }

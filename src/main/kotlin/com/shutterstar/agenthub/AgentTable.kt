@@ -179,11 +179,15 @@ internal class AgentTable(val rows: List<AgentRow>, private val context: AgentTa
         setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
         tableHeader.reorderingAllowed = false
 
-        // The header cannot re-sort (all columns unsortable); the sorter only keeps the fixed
-        // "updatable, installed, missing, unknown" order. It is stable, so equal ranks stay in
-        // the model's alphabetical order, and toggling a checkbox never moves a row.
+        // Only the Agent and Status headers sort (the header arrow shows which). The default is Status
+        // ascending: "updatable, installed, missing, unknown". The sort is stable, so equal ranks stay
+        // in the model's alphabetical order. Other columns stay unsortable: sorting by the checkbox
+        // would make a row jump when it is toggled. A single sort key keeps a header click a plain
+        // A-Z / Z-A toggle instead of stacking the previous column as a secondary key.
         val sorter = TableRowSorter(tableModel)
-        for (col in 0 until tableModel.columnCount) sorter.setSortable(col, false)
+        sorter.maxSortKeys = 1
+        for (col in 0 until tableModel.columnCount) sorter.setSortable(col, col == 1 || col == 3)
+        sorter.setComparator(1, String.CASE_INSENSITIVE_ORDER)
         sorter.setComparator(3, compareBy<Any?> { statusRank(it?.toString().orEmpty()) })
         sorter.sortKeys = listOf(RowSorter.SortKey(3, SortOrder.ASCENDING))
         rowSorter = sorter

@@ -4,13 +4,13 @@
 
 ```shell
 # Install with npm
-npm install -g opencode-ai
+npm install -g @opencode/cli
 
 # Update to latest version
-npm update --quiet --no-fund -g opencode-ai
+npm update --quiet --no-fund -g @opencode/cli
 
 # Uninstall
-npm uninstall -g opencode-ai
+npm uninstall -g @opencode/cli
 ```
 
 > via [opencode.ai/docs](https://opencode.ai/docs)

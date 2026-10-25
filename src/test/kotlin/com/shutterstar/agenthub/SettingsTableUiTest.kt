@@ -19,6 +19,8 @@ import javax.imageio.ImageIO
 import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.JScrollPane
+import javax.swing.RowSorter
+import javax.swing.SortOrder
 import javax.swing.SwingUtilities
 
 class SettingsTableUiTest {
@@ -114,6 +116,26 @@ class SettingsTableUiTest {
             val second = table.prepareRenderer(table.getCellRenderer(1, col), 1, col)
             assertEquals(table.background, second.background, "column $col")
         }
+    }
+
+    @Test fun `agent and status headers sort and status ascending is the default`() = SwingUtilities.invokeAndWait {
+        val table = agentTable().table
+        fun names() = (0 until table.rowCount).map { table.getValueAt(it, 1) }
+        assertEquals(listOf(RowSorter.SortKey(3, SortOrder.ASCENDING)), table.rowSorter.sortKeys)
+        assertEquals(listOf("Codex CLI", "Claude Code"), names())
+
+        table.rowSorter.toggleSortOrder(1)
+        assertEquals(listOf(RowSorter.SortKey(1, SortOrder.ASCENDING)), table.rowSorter.sortKeys)
+        assertEquals(listOf("Claude Code", "Codex CLI"), names())
+        table.rowSorter.toggleSortOrder(1)
+        assertEquals(listOf("Codex CLI", "Claude Code"), names())
+
+        table.rowSorter.toggleSortOrder(3)
+        assertEquals(listOf(RowSorter.SortKey(3, SortOrder.ASCENDING)), table.rowSorter.sortKeys)
+
+        table.rowSorter.toggleSortOrder(0)
+        table.rowSorter.toggleSortOrder(2)
+        assertEquals(listOf(RowSorter.SortKey(3, SortOrder.ASCENDING)), table.rowSorter.sortKeys)
     }
 
     private fun actionButton(component: java.awt.Component): JButton = (component as JPanel).getComponent(0) as JButton

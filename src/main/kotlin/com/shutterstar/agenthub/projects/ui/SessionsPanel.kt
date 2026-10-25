@@ -3,6 +3,7 @@ package com.shutterstar.agenthub.projects.ui
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
+import com.shutterstar.agenthub.projects.launch.NativeImportCommands
 import com.shutterstar.agenthub.projects.model.AgentSession
 import java.awt.BorderLayout
 import java.awt.Component
@@ -23,6 +24,7 @@ import javax.swing.BoxLayout
 import javax.swing.DefaultListModel
 import javax.swing.JComponent
 import javax.swing.JList
+import javax.swing.JMenu
 import javax.swing.JMenuItem
 import javax.swing.JPanel
 import javax.swing.JPopupMenu
@@ -40,6 +42,10 @@ internal class SessionActions(
     val openTranscript: (AgentSession) -> Unit = {},
     /** Reveal the transcript/source file in the OS file manager. */
     val reveal: (AgentSession) -> Unit = {},
+    /** Open the session in another agent through that agent's own importer (target agent id). */
+    val openIn: (AgentSession, String) -> Unit = { _, _ -> },
+    /** Installed agents that can natively open this session. */
+    val importTargets: (AgentSession) -> List<String> = { NativeImportCommands.targets(it.agentId, it.nativeResumeId) },
 )
 
 /**
@@ -235,6 +241,21 @@ internal class SessionsPanel(
             toolTipText = if (item.resumable) "Reopen this session with its own agent" else item.resumeBlockedReason ?: NOT_RESUMABLE_TOOLTIP
             addActionListener { actions.resume(item.session) }
         })
+        val importTargets = if (item.session.fromPromptHistory || item.session.sourcePath == null) {
+            emptyList()
+        } else {
+            actions.importTargets(item.session)
+        }
+        if (importTargets.isNotEmpty()) {
+            add(JMenu("Open in…").apply {
+                importTargets.forEach { target ->
+                    add(JMenuItem(agentName(target)).apply {
+                        toolTipText = NativeImportCommands.note(target)
+                        addActionListener { actions.openIn(item.session, target) }
+                    })
+                }
+            })
+        }
         add(JMenuItem("Open Transcript").apply {
             isEnabled = item.session.sourcePath != null
             accelerator = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK)

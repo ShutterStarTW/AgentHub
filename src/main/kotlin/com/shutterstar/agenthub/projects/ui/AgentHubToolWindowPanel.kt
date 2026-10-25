@@ -52,6 +52,7 @@ import com.shutterstar.agenthub.environment.skills.ui.SkillHistoryItem
 import com.shutterstar.agenthub.environment.skills.ui.SkillSyncSettingsDialog
 import com.shutterstar.agenthub.environment.skills.ui.SkillsPanel
 import com.shutterstar.agenthub.environment.ui.EnvironmentUiModel
+import com.shutterstar.agenthub.projects.launch.NativeImportCommands
 import com.shutterstar.agenthub.projects.launch.NativeResumeCommands
 import com.shutterstar.agenthub.projects.launch.ResumeTabTitle
 import com.shutterstar.agenthub.projects.launch.RunningSessionProbe
@@ -113,6 +114,8 @@ class AgentHubToolWindowPanel(
         resume = ::resumeSession,
         openTranscript = ::openTranscript,
         reveal = ::revealTranscript,
+        openIn = ::openSessionIn,
+        importTargets = { session -> NativeImportCommands.targets(session.agentId, session.nativeResumeId).filter(isAgentVisible) },
     )
     private val projectsPanel = ProjectsPanel(
         project,
@@ -904,6 +907,35 @@ class AgentHubToolWindowPanel(
                 }
                 val label = ResumeTabTitle.label(session.title ?: session.firstMessage, session.id)
                 TerminalCommandRunner.run(project, "🤖 $agentName · $label", command, workingDirectory)
+            }, ModalityState.any())
+        }
+    }
+
+    /**
+     * Cross-agent open: starts [targetAgentId]'s own importer for [session] (see [NativeImportCommands])
+     * in the session's project directory. AgentHub only launches the command; the target agent reads
+     * the source transcript and writes its own session store.
+     */
+    private fun openSessionIn(session: AgentSession, targetAgentId: String) {
+        val command = NativeImportCommands.command(session.agentId, targetAgentId, session.nativeResumeId) ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val transcriptMissing = session.sourcePath
+                ?.let { path -> runCatching { !Files.exists(Path.of(path)) }.getOrDefault(true) }
+                ?: true
+            val workingDirectory = com.shutterstar.agenthub.projects.launch.SessionLaunchDirectory.resolve(session.projectPath)
+            ApplicationManager.getApplication().invokeLater({
+                if (disposed || project.isDisposed) return@invokeLater
+                val warning = when {
+                    transcriptMissing -> "The session file is no longer available. Refresh the project index."
+                    workingDirectory == null -> "The session project directory is unavailable. Refresh the project index; the agent was not started."
+                    else -> null
+                }
+                if (warning != null) {
+                    DetectionResultsWatcher.showNotification(project, "Open session in another agent", warning, NotificationType.WARNING)
+                    return@invokeLater
+                }
+                val label = ResumeTabTitle.label(session.title ?: session.firstMessage, session.id)
+                TerminalCommandRunner.run(project, "🤖 ${AgentHubUiComponents.displayName(targetAgentId)} · $label", command, workingDirectory!!)
             }, ModalityState.any())
         }
     }

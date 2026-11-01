@@ -78,6 +78,7 @@
             <li><a href="https://cline.bot/cli">Cline</a> &mdash; Cline</li>
             <li><a href="https://www.codebuddy.ai">CodeBuddy</a> &mdash; Tencent</li>
             <li><a href="https://www.codebuff.com">Codebuff</a> &mdash; Codebuff</li>
+            <li><a href="https://codewhale.net">CodeWhale</a> &mdash; CodeWhale</li>
             <li><a href="https://openai.com/codex">Codex CLI</a> &mdash; OpenAI</li>
             <li><a href="https://commandcode.ai">Command Code</a> &mdash; Command Code</li>
             <li><a href="https://continue.dev">Continue CLI</a> &mdash; Continue</li>
@@ -99,6 +100,7 @@
             <li><a href="https://leanctl.com">LeanCTL</a> &mdash; LeanCTL</li>
             <li><a href="https://docs.letta.com/letta-code">Letta Code</a> &mdash; Letta</li>
             <li><a href="https://mimo.xiaomi.com/mimocode">MiMo Code</a> &mdash; Xiaomi</li>
+            <li><a href="https://agent.minimax.io/docs/cli/quick-start">MiniMax Code</a> &mdash; MiniMax</li>
             <li><a href="https://mistral.ai/products/vibe">Mistral Vibe</a> &mdash; Mistral AI</li>
             <li><a href="https://dev.meta.ai/products/muse-code">Muse Code</a> &mdash; Meta</li>
             <li><a href="https://omp.sh">Oh My Pi</a> &mdash; can1357</li>
@@ -123,6 +125,7 @@
             <li><a href="https://www.coderabbit.ai/cli">CodeRabbit CLI</a> &mdash; AI code reviews in the terminal</li>
             <li><a href="https://www.litellm.ai">LiteLLM</a> &mdash; self-hosted multi-provider LLM gateway with cost tracking</li>
             <li><a href="https://repomix.com">Repomix</a> &mdash; pack your repository into an AI-friendly file</li>
+            <li><a href="https://www.rtk-ai.app">RTK</a> &mdash; compresses/filters shell output before it reaches the agent's context</li>
             <li><a href="https://semgrep.dev">Semgrep CLI</a> &mdash; static analysis security scanner</li>
             <li><a href="https://www.skills.sh">Skills</a> &mdash; install reusable agent skills</li>
             <li><a href="https://www.tokentracker.cc">TokenTracker</a> &mdash; local token &amp; cost dashboard</li>
@@ -130,6 +133,13 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>1.3.7</b></p>
+        <ul>
+            <li>New agents: <b>CodeWhale</b> and <b>MiniMax Code</b>.</li>
+            <li>New companion tool: <b>RTK</b> &mdash; compresses/filters shell output (test runs, git log, lint reports) before it reaches the agent's context window.</li>
+            <li>Fixed: a deleted Claude Code skill kept in <code>~/.claude/skills/.trash/</code> no longer resurfaces as an active one.</li>
+            <li>Fixed: a Codex CLI session with no project directory (an allowed, projectless session since Codex 0.160) is listed instead of dropped.</li>
+        </ul>
         <p><b>1.3.6</b></p>
         <ul>
             <li>New agents: <b>Autohand Code</b>, <b>Codebuff</b>, <b>Hermes Agent</b> and <b>Letta Code</b>.</li>

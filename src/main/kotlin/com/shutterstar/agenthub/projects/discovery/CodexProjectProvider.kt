@@ -168,14 +168,16 @@ class CodexProjectProvider(
             val topLevel = MetadataJsonParser.topLevelStringFields(text, TOP_LEVEL_FIELDS)
             if (topLevel[TYPE_FIELD] != SESSION_META_TYPE) return@scanHeaderLines false
             val payload = MetadataJsonParser.objectStringFields(text, PAYLOAD_FIELD, PAYLOAD_FIELDS)
-            val projectPath = payload[WORKING_DIRECTORY_FIELD]?.takeIf { it.isNotBlank() } ?: return@scanHeaderLines false
+            // A policy-allowed projectless session (Codex 0.160+) has no cwd; keep it, with a null project,
+            // instead of dropping it - ProjectResolver already groups a null rawProjectPath per session.
+            val projectPath = payload[WORKING_DIRECTORY_FIELD]?.takeIf { it.isNotBlank() }
             val sessionId = payload[ID_FIELD]
                 ?.takeIf { it.isNotBlank() }
                 ?: payload[LEGACY_SESSION_ID_FIELD]?.takeIf { it.isNotBlank() }
                 ?: sessionIdFromFileName(sessionFile)
             val startedAt = LocalSessionSupport.parseTimestamp(payload[TIMESTAMP_FIELD] ?: topLevel[TIMESTAMP_FIELD])
             metadata = SessionMetadata(sessionId, projectPath, startedAt)
-            metadata != null
+            true
         }
         val resolved = metadata ?: return null
         val lastEventAt = findLastEventTimestamp(sessionFile)
@@ -247,7 +249,7 @@ class CodexProjectProvider(
 
     private data class SessionMetadata(
         val sessionId: String,
-        val projectPath: String,
+        val projectPath: String?,
         val startedAt: Instant?,
     )
 
@@ -305,7 +307,8 @@ class CodexProjectProvider(
 
 data class CodexThreadRecord(
     val id: String,
-    val cwd: String,
+    /** Null for a policy-allowed projectless session (Codex 0.160+); kept, not dropped. */
+    val cwd: String?,
     val title: String?,
     val firstMessage: String?,
     val createdAt: Instant?,
@@ -364,7 +367,7 @@ class CodexThreadDatabaseReader(
         val columns = line.split('\t')
         if (columns.size != COLUMN_COUNT) return null
         val id = decodeHex(columns[0])?.takeIf { it.isNotBlank() } ?: return null
-        val cwd = decodeHex(columns[1])?.removePrefix(EXTENDED_PATH_PREFIX)?.takeIf { it.isNotBlank() } ?: return null
+        val cwd = decodeHex(columns[1])?.removePrefix(EXTENDED_PATH_PREFIX)?.takeIf { it.isNotBlank() }
         return CodexThreadRecord(
             id = id,
             cwd = cwd,
@@ -415,11 +418,14 @@ class CodexThreadDatabaseReader(
 
         private const val COLUMN_COUNT = 8
         private const val EXTENDED_PATH_PREFIX = "\\\\?\\"
+
+        // No `WHERE cwd <> ''`: a policy-allowed projectless session (Codex 0.160+) has an empty cwd and is
+        // kept, not dropped - parseRow() turns the blank into a null rawProjectPath instead.
         private const val THREAD_QUERY =
             "SELECT hex(id), hex(cwd), hex(coalesce(nullif(name, ''), title)), hex(first_user_message), created_at, updated_at, hex(model), tokens_used " +
-                "FROM threads WHERE cwd <> '' ORDER BY updated_at DESC LIMIT 20000;"
+                "FROM threads ORDER BY updated_at DESC LIMIT 20000;"
         private const val BASIC_THREAD_QUERY =
             "SELECT hex(id), hex(cwd), hex(title), hex(''), created_at, updated_at, hex(''), 0 " +
-                "FROM threads WHERE cwd <> '' ORDER BY updated_at DESC LIMIT 20000;"
+                "FROM threads ORDER BY updated_at DESC LIMIT 20000;"
     }
 }

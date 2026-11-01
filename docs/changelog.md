@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.7
+
+*2026-11-01*
+
+- New agents: **CodeWhale** and **MiniMax Code**.
+- New companion tool: **RTK** &mdash; compresses/filters shell output (test runs, `git log`, lint reports) before it reaches the agent's context window, often by 60-90%.
+- Fixed: a deleted Claude Code skill kept in `~/.claude/skills/.trash/` no longer resurfaces as an active one.
+- Fixed: a Codex CLI session with no project directory (an allowed, projectless session since Codex 0.160) is listed instead of dropped.
+
 ## 1.3.6
 
 *2026-10-25*

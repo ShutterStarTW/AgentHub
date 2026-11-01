@@ -93,7 +93,8 @@ when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. Th
 - **MCP:** global `$CODEX_HOME/config.toml`; project `<project>/.codex/config.toml`.
 - **Sessions:** `$CODEX_HOME/sessions/` and `$CODEX_HOME/archived_sessions/` (`rollout-*.jsonl`); user-assigned thread
   names come from `$CODEX_HOME/session_index.jsonl`. A thread whose rollout file is gone is listed from
-  `$CODEX_HOME/state_<n>.sqlite` and `thread_history_<n>.sqlite`.
+  `$CODEX_HOME/state_<n>.sqlite` and `thread_history_<n>.sqlite`. A policy-allowed projectless session (no working
+  directory) is listed with no project rather than dropped.
 
 ## GitHub Copilot CLI
 

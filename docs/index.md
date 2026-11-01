@@ -94,6 +94,7 @@ folders, with backups and rollback.
 | [Cline](https://cline.bot/cli)                                                 | `cline`      | Cline       | `npm install -g cline`                                                          |
 | [CodeBuddy](https://www.codebuddy.ai)                                          | `codebuddy`  | Tencent      | `npm install -g @tencent-ai/codebuddy-code`                                     |
 | [Codebuff](https://www.codebuff.com)                                           | `codebuff`   | Codebuff    | `npm install -g codebuff`                                                       |
+| [CodeWhale](https://codewhale.net)                                             | `codewhale`  | CodeWhale   | `npm install -g codewhale`                                                      |
 | [Codex CLI](https://openai.com/codex)                                          | `codex`      | OpenAI      | `npm install -g @openai/codex`                                                  |
 | [Command Code](https://commandcode.ai)                                         | `cmd`        | Command Code | `npm install -g command-code`                                                   |
 | [Continue CLI](https://continue.dev)                                           | `cn`         | Continue    | `npm install -g @continuedev/cli`                                               |
@@ -115,6 +116,7 @@ folders, with backups and rollback.
 | [LeanCTL](https://leanctl.com)                                                 | `leanctl`    | LeanCTL     | `npm install -g leanctl-bin`                                                    |
 | [Letta Code](https://docs.letta.com/letta-code)                                 | `letta`      | Letta       | `npm install -g @letta-ai/letta-code`                                           |
 | [MiMo Code](https://mimo.xiaomi.com/mimocode)                                  | `mimo`       | Xiaomi      | `npm install -g @mimo-ai/cli`                                                   |
+| [MiniMax Code](https://agent.minimax.io/docs/cli/quick-start)                  | `mcode`      | MiniMax     | `npm install -g @minimax-ai/code`                                               |
 | [Mistral Vibe](https://mistral.ai/products/vibe)                               | `vibe`       | Mistral AI  | `pip install mistral-vibe`                                                      |
 | [Muse Code](https://dev.meta.ai/products/muse-code)                 | `muse`       | Meta        | `curl -fsSL https://dev.meta.ai/install.sh \| bash`                             |
 | [Oh My Pi](https://omp.sh)                                                     | `omp`        | can1357     | `npm install -g @oh-my-pi/pi-coding-agent`                                      |
@@ -145,6 +147,7 @@ flow, appear in their own **Companion Tools** section in the toolbar dropdown an
 | [CodeRabbit CLI](https://www.coderabbit.ai/cli)                               | `coderabbit`   | CodeRabbit      | `curl -fsSL https://cli.coderabbit.ai/install.sh \| sh` | AI code reviews directly in the terminal                            |
 | [LiteLLM](https://www.litellm.ai)                                             | `litellm`      | BerriAI         | `pip install 'litellm[proxy]'`                         | Self-hosted multi-provider LLM gateway with cost tracking            |
 | [Repomix](https://repomix.com)                                                | `repomix`      | yamadashy       | `npm install -g repomix`                               | Packs your repository into a single AI-friendly file                |
+| [RTK](https://www.rtk-ai.app)                                                 | `rtk`          | RTK AI          | `brew install rtk-ai/tap/rtk`                           | Compresses/filters shell output (test runs, git log, lint reports) before it reaches the agent's context |
 | [Semgrep CLI](https://semgrep.dev)                                            | `semgrep`      | Semgrep         | `pip install semgrep`                                  | Static analysis security scanner for finding bugs and vulnerabilities |
 | [Skills](https://www.skills.sh)                                              | `skills`       | Vercel          | `npm install -g skills`                                | Installs reusable agent skills across many CLI agents                |
 | [TokenTracker](https://www.tokentracker.cc)                                   | `tokentracker` | TokenTracker    | `npm install -g tokentracker-cli`                      | Local-first token & cost dashboard across 25 AI coding tools         |

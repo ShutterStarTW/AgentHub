@@ -14,6 +14,9 @@ import com.shutterstar.agenthub.AgentRuntime
  * and flagged [system][com.shutterstar.agenthub.environment.skills.discovery.SkillSourceRecord.system],
  * distinct from the plain top-level entries in `skills/` (which the main scan below excludes it from,
  * to avoid discovering the same skill twice under two different flags).
+ *
+ * Deleted skills move to `skills/.trash/<name>/` (Claude Code 2.1.314+) and keep their `SKILL.md`, so the
+ * main scan below also excludes that directory - otherwise a trashed skill would resurface as an active one.
  */
 class ClaudeSkillProvider(
     userHome: Path = AgentRuntime.userHome(),
@@ -34,7 +37,7 @@ class ClaudeSkillProvider(
             scope = SkillScope.GLOBAL,
             shared = false,
             projectName = null,
-            excludeDirectoryNames = setOf(SYNCED_DIRECTORY),
+            excludeDirectoryNames = setOf(SYNCED_DIRECTORY, TRASH_DIRECTORY),
         )
         val synced = scanner.discover(
             root = root.resolve(SYNCED_DIRECTORY),
@@ -65,5 +68,6 @@ class ClaudeSkillProvider(
     private companion object {
         const val CLAUDE_DIRECTORY = ".claude"
         const val SYNCED_DIRECTORY = "synced"
+        const val TRASH_DIRECTORY = ".trash"
     }
 }

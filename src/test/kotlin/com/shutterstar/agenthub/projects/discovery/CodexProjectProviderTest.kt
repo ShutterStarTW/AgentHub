@@ -81,6 +81,21 @@ class CodexProjectProviderTest {
     }
 
     @Test
+    fun `database threads with no cwd are kept with no project, not dropped`() {
+        Files.createDirectories(codexDirectory())
+        Files.createFile(codexDirectory().resolve("state_5.sqlite"))
+        val records = listOf(
+            CodexThreadRecord("no-project", null, "Scratch thread", null, null, null),
+        )
+
+        val session = CodexProjectProvider(codexDirectory(), threadReader = { records }).discover().single()
+
+        assertEquals("no-project", session.sessionId)
+        assertNull(session.rawProjectPath)
+        assertEquals("Scratch thread", session.metadata["title"])
+    }
+
+    @Test
     fun `database threads without any prompt are empty sessions`() {
         Files.createDirectories(codexDirectory())
         Files.createFile(codexDirectory().resolve("state_5.sqlite"))
@@ -160,7 +175,7 @@ class CodexProjectProviderTest {
     }
 
     @Test
-    fun `missing id falls back to rollout UUID while missing cwd is skipped`() {
+    fun `missing id falls back to rollout UUID while missing cwd keeps the session with no project`() {
         val projectPath = homeDirectory.resolve("work/fallback")
         val uuid = "01a0569c-6006-7de2-9e3c-6ad4ce7e970d"
         writeRollout(
@@ -172,10 +187,10 @@ class CodexProjectProviderTest {
             listOf("""{"type":"session_meta","payload":{"id":"no-project"}}"""),
         )
 
-        val sessions = CodexProjectProvider(codexDirectory()).discover()
+        val sessions = CodexProjectProvider(codexDirectory()).discover().associateBy { it.sessionId }
 
-        assertEquals(1, sessions.size)
-        assertEquals(uuid, sessions.single().sessionId)
+        assertEquals(setOf(uuid, "no-project"), sessions.keys)
+        assertNull(sessions.getValue("no-project").rawProjectPath)
     }
 
     @Test

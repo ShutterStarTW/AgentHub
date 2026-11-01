@@ -212,6 +212,39 @@ npm uninstall -g repomix
 
 ---
 
+## RTK — by RTK AI
+
+Agent-agnostic token optimization pipeline: compresses and filters shell output (test runs, `git
+log`, lint reports) before it reaches the agent's context window, often by 60-90%. Works alongside
+Claude Code, Cursor, Copilot, Codex and others.
+
+```shell
+# Install (macOS / Linux)
+brew install rtk-ai/tap/rtk
+
+# Install (Windows)
+winget install rtk-ai.rtk
+
+# Update
+brew upgrade rtk
+
+# Uninstall
+brew uninstall rtk
+```
+
+> via [rtk-ai.app](https://www.rtk-ai.app) · [github.com/rtk-ai/rtk](https://github.com/rtk-ai/rtk)
+
+```
+% rtk --version
+% rtk gain         # shows the savings dashboard
+```
+
+> **Note:** a separate, unrelated package is also named `rtk` on crates.io — the Homebrew/winget
+> install above is the correct one; `rtk gain` must print the savings dashboard, not
+> "command not found".
+
+---
+
 ## Semgrep CLI — by Semgrep
 
 Static analysis security scanner that finds bugs, vulnerabilities and anti-patterns with

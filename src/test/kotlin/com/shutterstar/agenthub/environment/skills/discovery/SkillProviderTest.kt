@@ -111,6 +111,20 @@ class SkillProviderTest {
     }
 
     @Test
+    fun `should exclude Claude's trashed skills from discovery`() {
+        writeSkillMd(temporaryDirectory.resolve(".claude/skills/own-skill"), validSkill("own-skill", "The user's own skill"))
+        // Claude Code 2.1.314+ moves deleted skills to skills/.trash/<name>/, keeping their SKILL.md.
+        writeSkillMd(
+            temporaryDirectory.resolve(".claude/skills/.trash/deleted-skill"),
+            validSkill("deleted-skill", "A skill the user deleted"),
+        )
+
+        val skills = ClaudeSkillProvider(temporaryDirectory).discoverGlobal()
+
+        assertEquals(setOf("own-skill"), skills.mapTo(mutableSetOf()) { it.name })
+    }
+
+    @Test
     fun `should discover Codex's dot-prefixed system skills, invisible to the normal dot-directory skip`() {
         writeSkillMd(temporaryDirectory.resolve(".codex/skills/own-skill"), validSkill("own-skill", "The user's own skill"))
         writeSkillMd(

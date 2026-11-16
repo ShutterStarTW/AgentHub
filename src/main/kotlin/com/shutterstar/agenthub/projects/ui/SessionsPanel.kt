@@ -204,7 +204,7 @@ internal class SessionsPanel(
         val selectedKey = (list.selectedValue as? SessionRowItem.Group)?.groupKey
             ?: (list.selectedValue as? SessionRowItem.Session)?.session?.id
         model.removeAllElements()
-        build(scope, expandedKeys).forEach(model::addElement)
+        model.addAll(build(scope, expandedKeys))
         if (preserveSelection && selectedKey != null) {
             val index = (0 until model.size).firstOrNull { i ->
                 when (val item = model.getElementAt(i)) {

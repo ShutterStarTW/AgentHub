@@ -1,7 +1,6 @@
 package com.shutterstar.agenthub.storage
 
 import com.intellij.openapi.util.JDOMUtil
-import com.intellij.util.xmlb.XmlSerializer
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -103,16 +102,16 @@ class SharedXmlStore<S : Any>(
                 noteDiskStamp(diskStamp())
                 val latest = read(recoverCorrupt = true)
                 if (newerVersion) throw SharedStorageException("AgentHub data uses a newer schema. Update AgentHub before changing it.")
-                val updated = transform(copy(latest))
-                val xml = XmlSerializer.serialize(updated).apply { setAttribute("version", schemaVersion.toString()) }
+                val updated = transform(latest)
+                val xml = XmlStateCodecs.serialize(updated).apply { setAttribute("version", schemaVersion.toString()) }
                 home.atomicWrite(path, JDOMUtil.writeElement(xml).toByteArray(Charsets.UTF_8))
-                cached = updated
+                cached = copy(updated)
                 loadedStamp = diskStamp()
                 seenDiskStamp = loadedStamp
                 checkedAt = System.nanoTime()
                 readFailed = false
                 generation++
-                copy(cached)
+                updated
             }
         } catch (_: IOException) {
             // A failed durable transaction must not look successful to a mutation caller.
@@ -144,9 +143,8 @@ class SharedXmlStore<S : Any>(
         val bytes = Files.newInputStream(path, NOFOLLOW_LINKS).use { it.readNBytes(MAX_XML_BYTES + 1) }
         val parsed = try {
             if (bytes.size > MAX_XML_BYTES) throw CorruptState()
-            val text = String(bytes, Charsets.UTF_8)
-            // Do not permit external entities/DTDs from shared or migrated files.
-            if (DTD_PATTERN.containsMatchIn(text)) throw CorruptState()
+            // Do not permit external entities/DTDs or non-UTF-8 encodings from shared or migrated files.
+            if (containsForbiddenXmlDeclaration(bytes)) throw CorruptState()
             JDOMUtil.load(bytes.inputStream())
         } catch (_: Exception) {
             if (!recoverCorrupt) throw CorruptState()
@@ -160,7 +158,7 @@ class SharedXmlStore<S : Any>(
             newerVersion = version > schemaVersion || stateVersion > schemaVersion
             if (newerVersion) home.warning("AgentHub data uses a newer schema; this plugin will not overwrite it.")
             require(parsed.name == stateClass.simpleName)
-            XmlSerializer.deserialize(parsed, stateClass)
+            XmlStateCodecs.deserialize(parsed, stateClass)
         } catch (_: Exception) {
             if (!recoverCorrupt) throw CorruptState()
             quarantine()
@@ -177,18 +175,55 @@ class SharedXmlStore<S : Any>(
     }
 
     private fun diskStamp(): String = try {
-        home.requireSafePath(path!!)
-        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+        val attributes = home.safeAttributes(path!!)
         "${attributes.lastModifiedTime()}:${attributes.size()}:${attributes.fileKey()}"
     } catch (_: NoSuchFileException) { "missing" }
     catch (_: Exception) { "unavailable" }
 
-    private fun copy(state: S): S = XmlSerializer.deserialize(XmlSerializer.serialize(state), stateClass)
+    @Suppress("UNCHECKED_CAST")
+    private fun copy(state: S): S =
+        if (state is CopyableState<*>) (state as CopyableState<S>).deepCopy()
+        else XmlStateCodecs.deserialize(XmlStateCodecs.serialize(state), stateClass)
+
     private class CorruptState : RuntimeException()
 
     companion object {
         private const val MAX_XML_BYTES = 32 * 1024 * 1024
-        private val DTD_PATTERN = Regex("<!DOCTYPE|<!ENTITY", RegexOption.IGNORE_CASE)
+        private val DOCTYPE_BYTES = "DOCTYPE".toByteArray(Charsets.US_ASCII)
+        private val ENTITY_BYTES = "ENTITY".toByteArray(Charsets.US_ASCII)
+
+        internal fun containsForbiddenXmlDeclaration(bytes: ByteArray): Boolean {
+            if (bytes.size >= 2) {
+                val b0 = bytes[0].toInt() and 0xFF
+                val b1 = bytes[1].toInt() and 0xFF
+                if ((b0 == 0xFE && b1 == 0xFF) || (b0 == 0xFF && b1 == 0xFE)) return true
+            }
+            var i = 0
+            val limit = bytes.size
+            while (i < limit) {
+                val b = bytes[i]
+                if (b == 0.toByte()) return true
+                if (b == '<'.code.toByte() && i + 1 < limit && bytes[i + 1] == '!'.code.toByte()) {
+                    if (matchesAsciiIgnoreCase(bytes, i + 2, DOCTYPE_BYTES) ||
+                        matchesAsciiIgnoreCase(bytes, i + 2, ENTITY_BYTES)
+                    ) {
+                        return true
+                    }
+                }
+                i++
+            }
+            return false
+        }
+
+        private fun matchesAsciiIgnoreCase(bytes: ByteArray, offset: Int, targetUpper: ByteArray): Boolean {
+            if (offset + targetUpper.size > bytes.size) return false
+            for (j in targetUpper.indices) {
+                val c = bytes[offset + j].toInt() and 0xFF
+                val upper = if (c in 'a'.code..'z'.code) c - 32 else c
+                if (upper != targetUpper[j].toInt()) return false
+            }
+            return true
+        }
 
         private fun currentSchemaVersion(state: Any): Int =
             (state.javaClass.methods.firstOrNull { it.name == "getSchemaVersion" && it.parameterCount == 0 }

@@ -140,7 +140,7 @@ internal class AgentsPanel(
         updatingModel = true
         try {
             model.removeAllElements()
-            agents.forEach(model::addElement)
+            model.addAll(agents)
             val selectedIndex = agents.indexOfFirst { it.agentId == selectedAgentId }
             list.selectedIndex = when {
                 selectedIndex >= 0 -> selectedIndex
@@ -276,7 +276,7 @@ internal class AgentsPanel(
             environmentLabel = environmentInfo
             updateHeader()
             projectModel.removeAllElements()
-            agent?.projects.orEmpty().forEach(projectModel::addElement)
+            projectModel.addAll(agent?.projects.orEmpty())
             if (agentChanged) AgentHubUiComponents.scrollToTop(projectList)
             projectList.emptyText.text = if (agent == null) "Select an agent" else "No projects discovered"
             val scope = agent?.let { DetailsScope.ForAgent(it.agentId, projects) }

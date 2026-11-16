@@ -5,6 +5,7 @@ import com.shutterstar.agenthub.environment.discovery.CopilotPluginDiscoverySupp
 import com.shutterstar.agenthub.environment.mcp.model.McpScope
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectPathResolver
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.logging.Logger
 
@@ -27,10 +28,13 @@ class CopilotMcpProvider(
 
     override fun discoverProject(project: DiscoveredProject): List<RawMcpServer> {
         val projectRoot = ProjectPathResolver.resolveExistingRoot(project) ?: return emptyList()
-        return listOf(
-            projectRoot.resolve(LOCAL_MCP_FILE),
-            projectRoot.resolve(GITHUB_DIRECTORY).resolve(SHARED_MCP_FILE),
-        ).flatMap { configPath -> discoverConfig(configPath, McpScope.PROJECT, project.name) }
+        val localConfig = projectRoot.resolve(LOCAL_MCP_FILE)
+        val configPath = if (Files.exists(localConfig)) {
+            localConfig
+        } else {
+            projectRoot.resolve(GITHUB_DIRECTORY).resolve(SHARED_MCP_FILE)
+        }
+        return discoverConfig(configPath, McpScope.PROJECT, project.name)
     }
 
     private fun discoverConfig(

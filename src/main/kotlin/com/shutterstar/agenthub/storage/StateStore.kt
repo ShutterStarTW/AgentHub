@@ -1,5 +1,13 @@
 package com.shutterstar.agenthub.storage
 
+/**
+ * Fast, reflection-free defensive copy for in-memory snapshots.
+ * State classes implementing this avoid the reflective JDOM/XmlSerializer round-trip in [SharedXmlStore].
+ */
+interface CopyableState<S> {
+    fun deepCopy(): S
+}
+
 /** Updates are read/modify/write transactions. Snapshots must not be changed by their caller. */
 interface StateStore<S : Any> {
     val persistent: Boolean get() = false

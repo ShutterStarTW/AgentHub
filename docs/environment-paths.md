@@ -32,7 +32,10 @@ when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. Th
   `~/.gemini/{antigravity-cli,antigravity}/builtin/skills/`. The configured
   `ANTIGRAVITY_HOME` or `GEMINI_HOME` adds its `skills/` and
   `builtin/skills/` folders. AgentHub also scans `skills/` inside plugin folders under these
-  global roots.
+  global roots. Plugin discovery also includes extra directories in the manifest's `skills`
+  string or array, in addition to `skills/`. Manifest priority is `.antigravity-plugin/plugin.json`,
+  `plugin.json`, then the compatible `.claude-plugin/plugin.json`. Declared paths and scanned
+  directory links must stay inside the plugin. See [plugin manifests](https://antigravity.google/docs/build-plugins).
 - **Skills, project:** `<project>/**/{.agent,_agents,_agent,.gemini}/skills/` and `skills/`
   inside project plugin folders under `.agents/`, `.agent/`, `_agents/`, or `_agent/`.
 - **Instructions, global:** `GEMINI.md` and `AGENTS.md` under `~/.gemini/`,
@@ -54,8 +57,12 @@ when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. Th
 
 - **Skills:** global `$CLAUDE_CONFIG_DIR/skills/` (default `~/.claude/skills/`), including
   the separately marked `synced/` pack; project `<project>/.claude/skills/` and nested
-  `<project>/**/.claude/skills/` (monorepo packages; a session started above a package loads
-  them once Claude works on files there).
+  `<project>/**/.claude/skills/`. This is a filesystem inventory, not the current session's loaded skills.
+  With the Bash sandbox enabled, Claude Code 2.1.319+ loads a nested folder's skills only when
+  started there or after `/cd` into it. In 2.1.321+, file access inside `~/.claude/plugins` no longer
+  triggers nested `.claude/skills` loading; this does not disable explicitly declared plugin skills.
+  Sources: [2.1.319](https://github.com/anthropics/claude-code/releases/tag/v2.1.319),
+  [2.1.321](https://github.com/anthropics/claude-code/releases/tag/v2.1.321).
 - **Instructions:** global `$CLAUDE_CONFIG_DIR/CLAUDE.md` and `rules/**/*.md`; project
   nested `CLAUDE.md`, `CLAUDE.local.md`, and `.claude/rules/**/*.md`. Project `AGENTS.md`
   is always listed, with an info line when Claude Code does not apply it. Claude Code uses it only
@@ -103,11 +110,16 @@ when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. Th
   `<project>/.claude/skills/`.
 - **Instructions:** global `$COPILOT_HOME/copilot-instructions.md` and
   `$COPILOT_HOME/instructions/**/*.instructions.md`; project nested `AGENTS.md`,
-  `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, and
-  `.github/instructions/**/*.instructions.md`.
+  `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`,
+  `.github/instructions/**/*.instructions.md`, and `.claude/rules/**/*.md`.
+  Claude-compatible rules are project-scoped inventory; `paths`/`applyTo` applicability depends
+  on files used by the session. They are not loaded from `~/.claude/rules` by this provider.
+  See the [CLI instruction reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference#custom-instructions-locations).
 - **MCP:** global `$COPILOT_HOME/mcp-config.json` and MCP files or inline servers
   declared by installed plugin manifests; project `<project>/.mcp.json` and
-  `<project>/.github/mcp.json`.
+  `<project>/.github/mcp.json`, used only when `.mcp.json` is absent. An empty or malformed
+  `.mcp.json` does not enable the lower-priority file. See
+  [Copilot 1.0.108](https://github.com/github/copilot-cli/releases/tag/v1.0.108).
 - **Plugin source:** AgentHub scans bounded subdirectories of
   `$COPILOT_HOME/installed-plugins/`, including marketplace and `_direct` installs.
   Manifest paths are constrained to the plugin folder. This filesystem scan does not resolve
@@ -226,6 +238,13 @@ The data root is `~/.kimi-code`, or `KIMI_CODE_HOME` (the generic `~/.agents` re
   wire files are not counted. Resume: `kimi --session <id>`.
 - **Skills:** `$KIMI_CODE_HOME/skills` and `<project>/.kimi-code/skills`; the generic `~/.agents/skills` and `.agents/skills`
   are the shared provider's. Flat `<name>.md` skills, `extra_skill_dirs` and built-in skills are not modelled.
+  Kimi 2.5+ can merge skills from several session workspace roots; AgentHub inventories each
+  discovered project independently and does not reconstruct that session-specific root order.
+  In the session metadata, `cwd` is the host workspace path; `environmentId` and `environmentCwd`
+  describe the separate execution environment. AgentHub uses `cwd` and does not map remote
+  `environmentCwd` values onto local projects. Sources:
+  [skill roots](https://github.com/MoonshotAI/kimi-code/blob/main/packages/agent-core-v2/src/features/skill/catalog/skillRoots.ts),
+  [session metadata](https://github.com/MoonshotAI/kimi-code/blob/main/packages/agent-core-v2/src/session/sessionMetadata/sessionMetadataService.ts).
 - **Instructions:** global `$KIMI_CODE_HOME/AGENTS.md`, `$KIMI_CODE_HOME/SYSTEM.md` (replaces the main agent's system prompt) and
   the generic `~/.agents/AGENTS.md`; project `AGENTS.md` files and `.kimi-code/AGENTS.md`.
 - **MCP:** the `mcpServers` map of `$KIMI_CODE_HOME/mcp.json` and `<project>/.kimi-code/mcp.json`. Plugin-provided servers are not
@@ -240,7 +259,25 @@ The data root is `~/.kimi-code`, or `KIMI_CODE_HOME` (the generic `~/.agents` re
   `.kiro/steering/**/*.md`.
 - **MCP:** global `$KIRO_HOME/settings/mcp.json`; project
   `<project>/.kiro/settings/mcp.json`.
-- **Sessions:** `$KIRO_HOME/sessions/cli/` (default `~/.kiro/sessions/cli/`).
+- **Sessions, legacy:** `$KIRO_HOME/sessions/cli/<id>.json` and adjacent `<id>.jsonl`
+  (default home `~/.kiro/`).
+- **Sessions, V3 local:** `$KIRO_HOME/sessions/<workspace>/sess_<id>/session.json`,
+  with optional `messages.jsonl`. Metadata schema `1.0.0`, data-model version `1`, was
+  verified from local field names and types on 2026-11-12, without inspecting conversations.
+  AgentHub reads `id`, `title`, `createdAt`, `lastModifiedAt`, and the first nonblank
+  `workspacePaths` entry, falling back to `rootPaths`. A session without a workspace is
+  kept as an unresolved project. Missing IDs fall back to the `sess_<id>` directory name.
+  V3 prompt counts use `role: user` records; tool-result messages are excluded. Missing
+  transcripts leave the prompt count unknown; V3 token usage is not estimated.
+  Both layouts share a 20,000-entry scan budget. Nested subagent directories, directory links,
+  unknown metadata versions and explicitly non-local execution targets are excluded.
+  Cloud sessions, database stores and ZIP exports are not discovered by this file reader.
+  The layout is a versioned compatibility snapshot, not a stable Kiro storage contract; ACP
+  integrations should use `session/list` and `session/load` as the vendor recommends.
+  `kiro-cli chat --resume-id <id>` keeps the full V3 ID; harness selection is Kiro's responsibility.
+  Sources: [AWS V3 transcript example](https://github.com/aws-samples/sample-kiro-cli-multiagent-development/blob/main/docs/observability.md),
+  [ACP storage guidance](https://kiro.dev/docs/cli/v3/acp-migration/),
+  [harness selection](https://kiro.dev/docs/cli/agent-harness/).
 
 ## MiMo Code (`mimo`)
 
@@ -279,6 +316,15 @@ The vibe home is `~/.vibe`, or `VIBE_HOME`; `~/.agents` stays in the real home.
   `vibe --resume <sessionId>`.
 - **Skills:** `<vibe home>/skills` and `<project>/.vibe/skills` (project root only, no nested scan); `~/.agents/skills` and
   `<project>/.agents/skills` are the shared provider's. `skill_paths`, plugin skills and `builtin-skills` are not modelled.
+  Vibe 3.1.2 registry pins are also outside this filesystem inventory: global `<vibe home>/skills.toml`,
+  project `<project>/.vibe/skills.toml`, and cached versions under
+  `<vibe home>/skills-registry-cache/store/<skill_id>/<version>`. A cached version is not proof
+  of activation. With registry skills enabled, Vibe resolves project file, project pin, global
+  file, then global pin; the server reports the active pin. AgentHub neither computes that
+  session-specific state nor scans or synchronizes the cache. Its sync target remains the native
+  `skills/` directory. Sources:
+  [resolution ADR](https://github.com/mistralai/mistral-vibe/blob/v3.1.2/docs/adr/0021-registry-skills-resolution-and-store.md),
+  [manifests](https://github.com/mistralai/mistral-vibe/blob/v3.1.2/vibe/core/skills/registry/_manifest.py).
 - **Instructions:** global `<vibe home>/AGENTS.md`; project `AGENTS.md` files (Vibe reads them from the project root up to
   its trust root and injects sub-directory ones when it reads a file there). Custom prompts in `.vibe/prompts/` are not modelled.
 - **MCP:** the `[[mcp_servers]]` tables (`name`, `transport`, `command` as a string or list, `args`, `env`, `url`, `auth`) of
@@ -313,6 +359,17 @@ whole agent directory for the default profile, and a named profile (`OMP_PROFILE
 
 ## OpenCode
 
+- **Sessions:** read-only SQLite under `$XDG_DATA_HOME/opencode/` (default
+  `~/.local/share/opencode/`), including `opencode.db` and channel databases.
+  OpenCode 2.2.6 uses `session_v2` and typed `session_message` records; the reader falls back
+  to the older `session`/`message`/`part` schema when V2 is absent. V2 `time_archived` is kept
+  as raw discovery metadata, and archived sessions remain in AgentHub's inventory. This differs
+  from OpenCode's native lists and `--continue`, which skip archived runs. No archive UI filter
+  or archive-state persistence is implemented. Kilo and MiMo retain their separately verified
+  older reader path. Sources:
+  [2.2.6 schema](https://github.com/anomalyco/opencode/blob/v2.2.6/packages/core/src/database/schema.gen.ts),
+  [typed messages](https://github.com/anomalyco/opencode/blob/v2.2.6/packages/schema/src/session-message.ts),
+  [2.2.6 release](https://github.com/anomalyco/opencode/releases/tag/v2.2.6).
 - **Skills:** global `~/.config/opencode/skills/`, `~/.opencode/skills/` (the home-level `.opencode` is a config
   directory too), `~/.claude/skills/`, and `skills/` in the directory named by `$OPENCODE_CONFIG_DIR`; the singular
   `skill/` folder is accepted next to `skills/` in each config directory. Project nested `**/{.opencode,.claude}/skills/`
@@ -409,7 +466,7 @@ modification time and allowlisted highlights. The summary includes the Config co
 | Claude Code | `$CLAUDE_CONFIG_DIR/settings.json` (default `~/.claude/settings.json`), `~/.claude.json` | `.claude/settings.json`, `.claude/settings.local.json` |
 | Cline | `$CLINE_DATA_DIR/globalState.json` (default `~/.cline/data/globalState.json`) | — |
 | Codex | `$CODEX_HOME/config.toml` (default `~/.codex/config.toml`) | `.codex/config.toml` |
-| Copilot | `$COPILOT_HOME/{settings.json,permissions-config.json,permissions-config}` (default `~/.copilot/`) | `.github/copilot/settings.json`, `.github/copilot/settings.local.json` |
+| Copilot | `$COPILOT_HOME/{settings.json,permissions-config.json,permissions-config}` (default `~/.copilot/`) | `.github/copilot/settings.json`, `.github/copilot/settings.local.json`, `.claude/settings.json` |
 | Cursor | `$CURSOR_CONFIG_DIR/cli-config.json`, or `$XDG_CONFIG_HOME/cursor/cli-config.json` on non-Windows systems when set, else `~/.cursor/cli-config.json` | `.cursor/cli.json` |
 | Freebuff | `$FREEBUFF_CONFIG_DIR/settings.json` (default `~/.config/manicode/settings.json`) | — |
 | Grok | `$GROK_HOME/config.toml` (default `~/.grok/config.toml`) | `.grok/config.toml` |

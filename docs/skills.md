@@ -16,7 +16,7 @@ session has been discovered for it. WSL launch mode does not switch this browser
 - The agent icons of a skill, and the agent filter, show the agents the folder **belongs to** (Claude for
   `.claude/skills`). In a project, only agents that have a session in that project are shown.
 - The **summary** counts shared, in-sync and conflicting skill groups separately from the number of
-  occurrences. It also shows the totals of healthy, broken and unknown targets and the managed-agent
+  occurrences. It also shows the totals of healthy, broken, not shared, unmanaged and unavailable targets and the managed-agent
   coverage.
 - **Discovery warnings** appear in a collapsed **N discovery warnings** bar above the list. Click it
   to expand.

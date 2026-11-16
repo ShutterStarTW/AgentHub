@@ -1,5 +1,7 @@
 package com.shutterstar.agenthub.environment.skills.sync.persistence
 
+import com.shutterstar.agenthub.storage.CopyableState
+
 data class SkillSyncSettingsState(
     var schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     var preferredSyncMode: String = "SYMLINK",
@@ -8,7 +10,9 @@ data class SkillSyncSettingsState(
     var manageExistingTargets: Boolean = false,
     // Added later as well: an older persisted state lacks it and keeps the safe default (review first).
     var reviewPlanBeforeApplying: Boolean = true,
-) {
+) : CopyableState<SkillSyncSettingsState> {
+    override fun deepCopy(): SkillSyncSettingsState = copy()
+
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1
     }

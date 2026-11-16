@@ -113,6 +113,25 @@ class AntigravityCopilotInstructionProviderTest {
     }
 
     @Test
+    fun `should discover nested Copilot Claude rules without treating settings or other files as instructions`() {
+        val projectRoot = Files.createDirectories(temporaryDirectory.resolve("copilot-rules"))
+        val rules = Files.createDirectories(projectRoot.resolve("packages/app/.claude/rules/backend"))
+        Files.writeString(rules.resolve("api.md"), "---\npaths: src/**/*.kt\n---\nUse typed errors")
+        Files.writeString(rules.resolve("ignored.txt"), "Not an instruction")
+        Files.writeString(projectRoot.resolve("packages/app/.claude/settings.json"), "{}")
+        val excluded = Files.createDirectories(projectRoot.resolve("node_modules/vendor/.claude/rules"))
+        Files.writeString(excluded.resolve("excluded.md"), "Not project instructions")
+
+        val source = CopilotInstructionProvider(temporaryDirectory.resolve(".copilot"))
+            .discoverProject(project(projectRoot)).single()
+
+        assertTrue(source.path.endsWith("api.md"))
+        assertEquals(InstructionType.COPILOT_INSTRUCTION, source.type)
+        assertEquals(InstructionScope.PROJECT, source.scope)
+        assertEquals(setOf("copilot"), source.agentIds)
+    }
+
+    @Test
     fun `should merge shared Antigravity and Copilot context files for comparison`() {
         val projectRoot = Files.createDirectories(temporaryDirectory.resolve("shared-project"))
         Files.writeString(projectRoot.resolve("AGENTS.md"), "Shared agent instructions")

@@ -127,7 +127,7 @@ internal class ProjectsPanel(
         updatingModel = true
         try {
             model.removeAllElements()
-            projects.forEach(model::addElement)
+            model.addAll(projects)
             val selectedIndex = projects.indexOfFirst { it.identity.id == selectedId }
             list.selectedIndex = when {
                 selectedIndex >= 0 -> selectedIndex

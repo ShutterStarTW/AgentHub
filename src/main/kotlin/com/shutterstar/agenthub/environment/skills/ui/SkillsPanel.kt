@@ -644,9 +644,10 @@ internal class SkillsPanel(
             target.status == SkillTargetStatus.COPIED && !copiedInSync(skillId, target.agentId, target.fingerprint)
         }
         val conflictTargets = observedTargets.count { (_, target) -> target.status == SkillTargetStatus.DIFFERENT }
-        val unknownTargets = observedTargets.count { (_, target) ->
-            target.status == SkillTargetStatus.NOT_AVAILABLE || target.status == SkillTargetStatus.UNSUPPORTED ||
-                target.status == SkillTargetStatus.IDENTICAL_UNMANAGED || target.status == SkillTargetStatus.ERROR
+        val notSharedTargets = observedTargets.count { (_, target) -> target.status == SkillTargetStatus.NOT_AVAILABLE }
+        val unmanagedTargets = observedTargets.count { (_, target) -> target.status == SkillTargetStatus.IDENTICAL_UNMANAGED }
+        val unavailableTargets = observedTargets.count { (_, target) ->
+            target.status == SkillTargetStatus.UNSUPPORTED || target.status == SkillTargetStatus.ERROR
         }
         val migrationCount = snapshot?.let { countMigratable(it.skills, it.context) } ?: 0
         val redundantCount = snapshot?.let { countRedundantCopies(skillGroups(it)) } ?: 0
@@ -673,7 +674,9 @@ internal class SkillsPanel(
                     outOfSyncTargets.takeIf { it > 0 }?.let { "$it out of sync" },
                     conflictTargets.takeIf { it > 0 }?.let { "$it conflicts" },
                     brokenTargets.takeIf { it > 0 }?.let { "$it broken" },
-                    unknownTargets.takeIf { it > 0 }?.let { "$it unknown" },
+                    notSharedTargets.takeIf { it > 0 }?.let { "$it not shared" },
+                    unmanagedTargets.takeIf { it > 0 }?.let { "$it unmanaged" },
+                    unavailableTargets.takeIf { it > 0 }?.let { "$it unavailable" },
                 )
                 if (health.isNotEmpty()) add("targets " + health.joinToString(" / "))
                 if (managedCoverage > 0 && eligibleCoverage > 0) {

@@ -40,7 +40,7 @@ class CopilotConfigProvider(homeDirectory: Path = home()) : FileConfigProvider(
     listOf("settings.json", "permissions-config.json", "permissions-config", "lsp-config.json").map {
         agentHome(homeDirectory, "COPILOT_HOME", ".copilot").resolve(it)
     },
-    listOf(".github/copilot/settings.json", ".github/copilot/settings.local.json"),
+    listOf(".github/copilot/settings.json", ".github/copilot/settings.local.json", ".claude/settings.json"),
 )
 
 class CursorConfigProvider(homeDirectory: Path = home()) : FileConfigProvider(

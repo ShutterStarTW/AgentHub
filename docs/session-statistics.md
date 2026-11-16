@@ -14,8 +14,8 @@ Info rows show only nonempty text and positive numeric measurements. Missing and
 | Qwen | Saved chat JSONL | Native manual/automatic title, models, reported tokens/cache/reasoning, context/window, tools/errors, edit prompts and timing |
 | Copilot | Session `events.jsonl` | Models, per-call and shutdown token totals, cache/reasoning, API time, model/tool errors, tool activity, modified-file and line counts, premium requests and nano AI units |
 | Cline | Session messages JSON, located through session JSON or SQLite | Models, terminal-turn input/output/cache metrics, recorded complete or partial cost, tools/errors, edit prompts and event timing |
-| OpenCode | Read-only SQLite message/part tables; legacy message JSON | Models, input/output/cache/reasoning tokens, recorded complete or partial cost and timing. SQLite tool parts also supply tool/error and edit-prompt counts |
-| Kiro | Session JSON and adjacent transcript JSONL | Routed models when recorded, tools/errors, edit prompts, context-window size, reported context percentage and elapsed time |
+| OpenCode | Read-only SQLite: `session_message` (2.2.6+) or message/part tables; legacy message JSON | Models, input/output/cache/reasoning tokens, recorded complete or partial cost and timing. SQLite tool parts of the earlier schema also supply tool/error and edit-prompt counts |
+| Kiro | Legacy session JSON and adjacent transcript JSONL; V3 sessions supply prompt counts only | Routed models when recorded, tools/errors, edit prompts, context-window size, reported context percentage and elapsed time |
 | Cursor | `meta.json` and `prompt_history.json` | Native title, prompt count, consecutive repeated prompts and elapsed time. The binary conversation store is not decoded |
 | Antigravity | Conversation metadata and transcript steps | Native title, prompts, tools, edit prompts and event timing. Inspected transcript steps do not provide token usage or model pricing |
 

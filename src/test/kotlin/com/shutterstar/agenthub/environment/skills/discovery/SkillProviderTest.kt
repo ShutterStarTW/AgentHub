@@ -434,6 +434,59 @@ class SkillProviderTest {
     }
 
     @Test
+    fun `should discover Antigravity manifest skill directories in addition to defaults`() {
+        val plugin = temporaryDirectory.resolve(".gemini/config/plugins/custom")
+        writeSkillMd(plugin.resolve("skills/default"), "---\nname: default\n---")
+        writeSkillMd(plugin.resolve("workflows/review"), "---\nname: review\n---")
+        Files.writeString(plugin.resolve("plugin.json"), """{"skills":["./workflows","./skills","../outside"]}""")
+        writeSkillMd(plugin.parent.resolve("outside/escaped"), "---\nname: escaped\n---")
+
+        val found = AntigravitySkillProvider(temporaryDirectory).discoverGlobal()
+
+        assertEquals(setOf("default", "review"), found.map { it.name }.toSet())
+        assertEquals(2, found.size)
+    }
+
+    @Test
+    fun `should prefer Antigravity manifest and accept a single skill directory string`() {
+        val plugin = temporaryDirectory.resolve(".gemini/config/plugins/custom")
+        writeSkillMd(plugin.resolve("workflows/review"), "---\nname: review\n---")
+        val manifest = Files.createDirectories(plugin.resolve(".antigravity-plugin"))
+        Files.writeString(manifest.resolve("plugin.json"), """{"skills":"./workflows"}""")
+        Files.writeString(plugin.resolve("plugin.json"), """{"skills":"./ignored"}""")
+        writeSkillMd(plugin.resolve("ignored/ignored"), "---\nname: ignored\n---")
+
+        assertEquals(listOf("review"), AntigravitySkillProvider(temporaryDirectory).discoverGlobal().map { it.name })
+    }
+
+    @Test
+    fun `should read Claude compatible Antigravity plugin manifests in projects`() {
+        val root = Files.createDirectories(temporaryDirectory.resolve("project"))
+        val plugin = root.resolve(".agents/plugins/compatible")
+        writeSkillMd(plugin.resolve("workflows/review"), "---\nname: review\n---")
+        val manifest = Files.createDirectories(plugin.resolve(".claude-plugin"))
+        Files.writeString(manifest.resolve("plugin.json"), """{"skills":"./workflows"}""")
+
+        val source = AntigravitySkillProvider(temporaryDirectory).discoverProject(project(root)).single()
+
+        assertEquals("review", source.name)
+        assertEquals(SkillScope.PROJECT, source.scope)
+    }
+
+    @Test
+    fun `should not follow Antigravity plugin skill links outside the plugin`() {
+        val plugin = temporaryDirectory.resolve(".gemini/config/plugins/custom")
+        writeSkillMd(plugin.resolve("skills/default"), "---\nname: default\n---")
+        val outside = temporaryDirectory.resolve("outside")
+        writeSkillMd(outside.resolve("escaped"), "---\nname: escaped\n---")
+        assumeFalse(runCatching { Files.createSymbolicLink(plugin.resolve("linked"), outside) }.isFailure)
+        Files.createSymbolicLink(plugin.resolve("skills/escaped"), outside.resolve("escaped"))
+        Files.writeString(plugin.resolve("plugin.json"), """{"skills":["./linked"]}""")
+
+        assertEquals(listOf("default"), AntigravitySkillProvider(temporaryDirectory).discoverGlobal().map { it.name })
+    }
+
+    @Test
     fun `should discover Copilot personal and compatible project skills`() {
         val copilotHome = temporaryDirectory.resolve(".copilot")
         writeSkillMd(copilotHome.resolve("skills/personal-review"), "---\nname: personal-review\n---")

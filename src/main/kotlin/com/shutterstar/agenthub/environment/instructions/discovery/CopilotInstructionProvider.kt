@@ -53,6 +53,10 @@ class CopilotInstructionProvider(
             fileName == GEMINI_FILE ||
             (fileName == COPILOT_INSTRUCTIONS_FILE && file.parent?.fileName?.toString() == GITHUB_DIRECTORY) ||
             (
+                fileName.endsWith(".md", ignoreCase = true) &&
+                    InstructionFileSupport.isWithinDirectory(root, file, ".claude", "rules")
+                ) ||
+            (
                 fileName.endsWith(MODULAR_INSTRUCTIONS_SUFFIX, ignoreCase = true) &&
                     InstructionFileSupport.isWithinDirectory(root, file, GITHUB_DIRECTORY, INSTRUCTIONS_DIRECTORY)
                 )

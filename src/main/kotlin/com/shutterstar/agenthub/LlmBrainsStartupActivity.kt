@@ -8,6 +8,7 @@ import com.shutterstar.agenthub.projects.launch.PendingAgentLaunchStore
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexService
 import java.util.concurrent.atomic.AtomicBoolean
 import com.shutterstar.agenthub.storage.AgentHubStorage
+import com.shutterstar.agenthub.storage.PersistedIndexWarmup
 
 class LlmBrainsStartupActivity : ProjectActivity, DumbAware {
 
@@ -16,12 +17,16 @@ class LlmBrainsStartupActivity : ProjectActivity, DumbAware {
         private val detectionStarted = AtomicBoolean(false)
         private val detectionFinished = AtomicBoolean(false)
         private val indexRefreshHooked = AtomicBoolean(false)
+        private val indexWarmupStarted = AtomicBoolean(false)
     }
 
     override suspend fun execute(project: Project) {
         AgentHubStorage.migrateLegacy()
         checkPendingAgentLaunch(project)
         hookIndexRefreshToDetection()
+        if (indexWarmupStarted.compareAndSet(false, true)) {
+            ApplicationManager.getApplication().executeOnPooledThread { PersistedIndexWarmup.warm() }
+        }
 
         val settings = AgentSettingsState.getInstance()
         val currentVersion = pluginVersion()

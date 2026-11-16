@@ -1,5 +1,6 @@
 package com.shutterstar.agenthub.projects.discovery
 
+import com.shutterstar.agenthub.ScanBudget
 import com.shutterstar.agenthub.environment.discovery.EnvHomeDirectorySupport
 import com.shutterstar.agenthub.projects.model.RawAgentProject
 import java.nio.file.Files
@@ -10,19 +11,31 @@ import kotlin.io.path.nameWithoutExtension
 
 class KiroProjectProvider(
     private val kiroDirectory: Path = defaultKiroDirectory(),
+    private val maxScanEntries: Int = MAX_SCAN_ENTRIES,
 ) : AgentProjectProvider {
     override val agentId: String = AGENT_ID
 
-    private val sessionsDirectory = kiroDirectory.resolve(SESSIONS_PATH)
+    private val sessionsRoot = kiroDirectory.resolve("sessions")
+    private val sessionsDirectory = sessionsRoot.resolve("cli")
 
-    override fun isAvailable(): Boolean = Files.isDirectory(sessionsDirectory, LinkOption.NOFOLLOW_LINKS)
+    override fun isAvailable(): Boolean = Files.isDirectory(sessionsRoot, LinkOption.NOFOLLOW_LINKS)
 
     override fun discover(): List<RawAgentProject> {
         if (!isAvailable()) return emptyList()
-        val sessions = runCatching {
+        val budget = ScanBudget(maxScanEntries.coerceAtLeast(0))
+        val sessions = discoverLegacySessions(budget) + discoverV3Sessions(budget)
+        return LocalSessionSupport.deduplicate(sessions)
+    }
+
+    private fun discoverLegacySessions(budget: ScanBudget): List<RawAgentProject> {
+        if (!Files.isDirectory(sessionsDirectory, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        return runCatching {
             Files.list(sessionsDirectory).use { files ->
                 files
-                    .limit(MAX_SCAN_ENTRIES.toLong())
+                    .limit(budget.remaining().toLong())
+                    .toList()
+                    .also { budget.consume(it.size) }
+                    .asSequence()
                     .filter { Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) }
                     .filter { it.extension.equals(JSON_EXTENSION, ignoreCase = true) }
                     .sorted()
@@ -32,7 +45,50 @@ class KiroProjectProvider(
                     .toList()
             }
         }.getOrDefault(emptyList())
-        return LocalSessionSupport.deduplicate(sessions)
+    }
+
+    private fun discoverV3Sessions(budget: ScanBudget): List<RawAgentProject> =
+        runCatching { LocalSessionSupport.listDirectories(sessionsRoot, budget) }.getOrDefault(emptyList())
+            .filterNot { it.fileName.toString() == "cli" || it.fileName.toString().startsWith('.') }
+            .flatMap { workspace ->
+                runCatching { LocalSessionSupport.listDirectories(workspace, budget) }.getOrDefault(emptyList())
+                    .filter { it.fileName.toString().startsWith("sess_") }
+                    .mapNotNull { directory ->
+                        runCatching { parseV3Session(directory.resolve("session.json")) }.getOrNull()
+                    }
+            }
+
+    private fun parseV3Session(metadata: Path): RawAgentProject? {
+        if (!Files.isRegularFile(metadata, LinkOption.NOFOLLOW_LINKS)) return null
+        val json = LocalSessionSupport.readBoundedText(metadata, MAX_JSON_CHARACTERS) ?: return null
+        val fields = MetadataJsonParser.topLevelStringFields(json, V3_STRING_FIELDS)
+        if (fields["schemaVersion"] != "1.0.0" ||
+            MetadataJsonParser.topLevelLongFields(json, setOf("dataModelVersion"))["dataModelVersion"] != 1L
+        ) return null
+        val target = MetadataJsonParser.stringAtPath(json, "_meta", "kiro", "executionTarget", "kind")
+        if (target != null && target != "local") return null
+        val projectPath = listOf("workspacePaths", "rootPaths").firstNotNullOfOrNull { field ->
+            MetadataJsonParser.rawTopLevelField(json, field)?.let(MetadataJsonParser::arrayStringElements)
+                ?.firstOrNull { it.isNotBlank() }
+        }
+        val startedAt = LocalSessionSupport.parseTimestamp(fields["createdAt"])
+        val updatedAt = LocalSessionSupport.parseTimestamp(fields["lastModifiedAt"])
+        val tally = UserMessageTally.scanJsonl(metadata.resolveSibling("messages.jsonl"), V3_PROMPT_MARKERS) { line ->
+            if (MetadataJsonParser.topLevelStringFields(line, setOf("role"))["role"] != "user") return@scanJsonl
+            val content = MetadataJsonParser.rawTopLevelField(line, "content")
+            if (MessageContentExtractor.hasBlockOfType(content, setOf("tool_result"))) return@scanJsonl
+            add(MessageContentExtractor.text(content))
+        }
+        return RawAgentProject(
+            agentId = agentId,
+            rawProjectPath = projectPath,
+            sessionId = fields[ID_FIELD]?.takeIf { it.isNotBlank() } ?: metadata.parent.fileName.toString(),
+            startedAt = startedAt,
+            updatedAt = LocalSessionSupport.latest(startedAt, updatedAt, LocalSessionSupport.modifiedAt(metadata)),
+            sourcePath = metadata.toAbsolutePath().normalize().toString(),
+            metadata = tally?.metadata().orEmpty() +
+                listOfNotNull(fields[TITLE_FIELD]?.takeIf { it.isNotBlank() }?.let { TITLE_FIELD to it }),
+        )
     }
 
     private fun parseSession(sessionFile: Path): RawAgentProject? {
@@ -85,7 +141,6 @@ class KiroProjectProvider(
 
     companion object {
         private const val AGENT_ID = "kiro"
-        private val SESSIONS_PATH = Path.of("sessions", "cli")
         private const val JSON_EXTENSION = "json"
         private const val JSONL_EXTENSION = "jsonl"
         private const val KIND_FIELD = "kind"
@@ -111,6 +166,8 @@ class KiroProjectProvider(
             TITLE_FIELD,
         )
         private val TIME_FIELDS = setOf(CREATED_AT_FIELD, UPDATED_AT_FIELD)
+        private val V3_STRING_FIELDS = setOf("schemaVersion", ID_FIELD, TITLE_FIELD, "createdAt", "lastModifiedAt")
+        private val V3_PROMPT_MARKERS = listOf("\"role\"")
 
         private fun defaultKiroDirectory(): Path = EnvHomeDirectorySupport.resolve("KIRO_HOME", ".kiro")
     }

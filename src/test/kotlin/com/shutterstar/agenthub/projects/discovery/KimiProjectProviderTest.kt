@@ -69,6 +69,21 @@ class KimiProjectProviderTest {
     }
 
     @Test
+    fun `should use host cwd rather than the remote environment cwd`() {
+        val hostPath = data.resolve("host-project").toString()
+        val directory = session("wd_host", "remote-environment", hostPath)
+        val state = directory.resolve("state.json")
+        val content = Files.readString(state).removeSuffix("}") +
+            """, "environmentId":"ssh-fixture", "environmentCwd":"/srv/remote-project"}"""
+        Files.writeString(state, content)
+
+        val found = KimiProjectProvider(data).discover().single()
+
+        assertEquals(hostPath, found.rawProjectPath)
+        assertFalse(found.metadata.values.any { it.contains("/srv/remote-project") })
+    }
+
+    @Test
     fun `should skip archived sessions sessions without a cwd and the index cache directory`() {
         val project = data.resolve("work/mixed").toString()
         session("wd_mixed_aaaaaaaaaaaa", "kept", project)

@@ -62,6 +62,7 @@ import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectIdentity
 import com.shutterstar.agenthub.projects.model.ProjectVisibility
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexService
+import com.shutterstar.agenthub.storage.PersistedIndexWarmup
 import com.shutterstar.agenthub.storage.SharedStateChangeMonitor
 import java.awt.BorderLayout
 import java.awt.CardLayout
@@ -282,6 +283,7 @@ class AgentHubToolWindowPanel(
                     SkillSyncSettingsStateService.getInstance().storageStamp(),
                 ).joinToString("|")
                 val changed = sharedChanges.observe(stamp)
+                if (changed) PersistedIndexWarmup.warm()
                 if (changed) ApplicationManager.getApplication().invokeLater({
                     if (!disposed && !project.isDisposed) {
                         environmentDiscovery.invalidateAll()

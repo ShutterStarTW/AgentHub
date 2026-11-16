@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.8
+
+*2026-11-16*
+
+- Switching between the Projects and Agents tabs no longer takes seconds with many projects, and the tool window opens faster.
+- The shared environment cache is much smaller: each skill is stored once instead of once per project.
+- Loading and saving the shared `~/.agenthub` data is faster.
+- The Skills summary splits its *unknown* targets into **not shared**, **unmanaged** and **unavailable**.
+- Sessions of **Kiro CLI V3** and **OpenCode 2.2.6+** are discovered.
+- **GitHub Copilot CLI** and **Antigravity CLI** show more instruction, config and skill sources.
+
 ## 1.3.7
 
 *2026-11-01*

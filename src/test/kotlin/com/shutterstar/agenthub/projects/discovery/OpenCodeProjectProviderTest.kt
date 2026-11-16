@@ -1,11 +1,13 @@
 package com.shutterstar.agenthub.projects.discovery
 
 import com.shutterstar.agenthub.json
+import com.shutterstar.agenthub.projects.resolve.ProcessCommandRunner
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTimeout
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.function.ThrowingSupplier
 import org.junit.jupiter.api.io.TempDir
@@ -74,6 +76,90 @@ class OpenCodeProjectProviderTest {
         assertTrue(commands.all { command -> command.any { it.endsWith("database with spaces.db") } })
         assertTrue(commands.first().last().startsWith("SELECT hex(id)"))
         assertTrue(commands.first().last().contains("LIMIT 20000"))
+    }
+
+    @Test
+    fun `should read V2 sessions and retain archive state without hiding archived runs`() {
+        val database = createDatabase("opencode.db")
+        val commands = mutableListOf<List<String>>()
+        val archived = Instant.parse("2026-11-06T12:00:00Z")
+        val reader = OpenCodeSqliteReader { command, _ ->
+            commands += command
+            when {
+                "FROM session_v2" in command.last() -> listOf(
+                    listOf(hex("ses_archived"), hex(tempDirectory.toString()), hex("Archived run"), "1", "2", archived.toEpochMilli().toString()).joinToString("\t"),
+                    listOf(hex("ses_active"), hex(tempDirectory.toString()), hex("Active run"), "1", "2", "").joinToString("\t"),
+                ).joinToString("\n")
+                "COUNT(*)" in command.last() -> "${hex("ses_archived")}\t2\t${hex("First prompt")}"
+                else -> ""
+            }
+        }
+
+        val records = reader.readSessions(database)
+        val sessions = OpenCodeProjectProvider(dataDirectory(), databaseReader = { records }).discover()
+
+        assertEquals(2, sessions.size)
+        assertEquals(archived, records.first().archivedAt)
+        assertEquals(archived.toString(), sessions.first { it.sessionId == "ses_archived" }.metadata["archivedAt"])
+        assertEquals(2, records.first().userMessageCount)
+        assertEquals(0, records.last().userMessageCount)
+        assertEquals("First prompt", records.first().firstMessage)
+        assertTrue(commands.all { "-readonly" in it })
+        assertFalse(commands.any { "FROM session " in it.last() })
+    }
+
+    @Test
+    fun `should read V2 archive prompt and usage fields from an isolated SQLite database`() {
+        assumeTrue(ProcessCommandRunner.run(listOf("sqlite3", "--version"), 5_000) != null)
+        val database = tempDirectory.resolve("v2-fixture.db")
+        val directory = tempDirectory.toString().replace("'", "''")
+        val sql = """
+            CREATE TABLE session_v2 (id TEXT, directory TEXT, title TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER);
+            CREATE TABLE session_message (id TEXT, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);
+            INSERT INTO session_v2 VALUES ('ses_archived', '$directory', 'Archived fixture', 1000, 2000, 3000);
+            INSERT INTO session_message VALUES ('u1', 'ses_archived', 'user', 1, 1000, '{"text":"First user prompt"}');
+            INSERT INTO session_message VALUES ('s1', 'ses_archived', 'synthetic', 2, 1100, '{"text":"Injected context"}');
+            INSERT INTO session_message VALUES ('u2', 'ses_archived', 'user', 3, 1200, '{"text":"Second user prompt"}');
+            INSERT INTO session_message VALUES ('a1', 'ses_archived', 'assistant', 4, 1500,
+                '{"model":{"modelID":"fixture-model"},"tokens":{"input":10,"output":5,"reasoning":2,"cache":{"read":3,"write":1}},"cost":0.25}');
+        """.trimIndent()
+        val script = tempDirectory.resolve("fixture.sql")
+        Files.writeString(script, sql)
+        val scriptPath = script.toString().replace('\\', '/').replace("'", "''")
+        assertEquals("", ProcessCommandRunner.run(listOf("sqlite3", database.toString(), ".read '$scriptPath'"), 5_000)?.trim())
+
+        val record = OpenCodeSqliteReader().readSessions(database).single()
+
+        assertEquals(Instant.ofEpochMilli(3000), record.archivedAt)
+        assertEquals(2, record.userMessageCount)
+        assertEquals("First user prompt", record.firstMessage)
+        assertEquals("10", record.statistics["inputTokens"])
+        assertEquals("7", record.statistics["outputTokens"])
+        assertEquals("1", record.statistics["modelCalls"])
+        assertEquals("2500000000", record.statistics["reportedCostTicks"])
+        assertFalse(record.statistics.toString().contains("Injected context"))
+    }
+
+    @Test
+    fun `should fall back to old SQLite schema and leave forks on their verified schema`() {
+        val database = createDatabase("old.db")
+        for (agent in listOf("opencode", "kilo", "mimo")) {
+            val commands = mutableListOf<String>()
+            val reader = OpenCodeSqliteReader(agent) { command, _ ->
+                commands += command.last()
+                when {
+                    "session_v2" in command.last() -> null
+                    command.last().startsWith("SELECT hex(id)") -> listOf(hex("old"), hex(tempDirectory.toString()), hex("Old"), "1", "2").joinToString("\t")
+                    else -> ""
+                }
+            }
+
+            val session = reader.readSessions(database).single()
+
+            assertEquals("old", session.id)
+            assertEquals(null, session.archivedAt)
+            assertEquals(agent == "opencode", commands.any { "session_v2" in it })
+        }
     }
 
     @Test

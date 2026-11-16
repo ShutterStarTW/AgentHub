@@ -133,6 +133,15 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>1.3.8</b></p>
+        <ul>
+            <li>Switching between the <b>Projects</b> and <b>Agents</b> tabs no longer takes seconds with many projects, and the tool window opens faster.</li>
+            <li>The shared environment cache is much smaller: each skill is stored once instead of once per project.</li>
+            <li>Loading and saving the shared <code>~/.agenthub</code> data is faster.</li>
+            <li>The Skills summary splits its <i>unknown</i> targets into <b>not shared</b>, <b>unmanaged</b> and <b>unavailable</b>.</li>
+            <li>Sessions of <b>Kiro CLI V3</b> and <b>OpenCode 2.2.6+</b> are discovered.</li>
+            <li><b>GitHub Copilot CLI</b> and <b>Antigravity CLI</b> show more instruction, config and skill sources.</li>
+        </ul>
         <p><b>1.3.7</b></p>
         <ul>
             <li>New agents: <b>CodeWhale</b> and <b>MiniMax Code</b>.</li>

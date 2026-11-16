@@ -43,8 +43,13 @@ try {
     $testResources = (Resolve-Path -LiteralPath ".\build\resources\test").Path
     $ideaLib = Join-Path $IdeaPath "lib"
     $kotlinLib = Join-Path $IdeaPath "plugins\Kotlin\kotlinc\lib\kotlin-stdlib.jar"
+    # IDEA 2026.3 (263) renamed annotations.jar to intellij.libraries.jetbrains.annotations.jar.
+    $annotationsJar = @("intellij.libraries.jetbrains.annotations.jar", "annotations.jar") |
+        Where-Object { Test-Path -LiteralPath (Join-Path $ideaLib $_) } |
+        Select-Object -First 1
+    if (-not $annotationsJar) { $annotationsJar = "annotations.jar" }
     $platformJars = @(
-        "annotations.jar"
+        $annotationsJar
         "util.jar"
         "util-8.jar"
         "util_rt.jar"

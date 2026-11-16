@@ -32,6 +32,14 @@ class NativeResumeCommandsTest {
     }
 
     @Test
+    fun `should keep the full V3 Kiro session id when resuming`() {
+        val id = "sess_11111111-2222-4333-8444-555555555555"
+
+        assertEquals("kiro-cli chat --resume-id $id", NativeResumeCommands.command("kiro", id))
+        assertNull(NativeResumeCommands.unavailableReason("kiro", id))
+    }
+
+    @Test
     fun `says why a session cannot be resumed`() {
         val id = "0b1f7a2e-3c4d-4e5f-8a9b-0c1d2e3f4a5b"
         assertNull(NativeResumeCommands.unavailableReason("claude", id))

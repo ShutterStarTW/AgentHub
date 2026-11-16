@@ -15,6 +15,82 @@ class KiroProjectProviderTest {
     lateinit var tempDirectory: Path
 
     @Test
+    fun `should discover V3 metadata alongside legacy sessions and count V3 user messages`() {
+        val project = tempDirectory.resolve("work/v3-project")
+        writeSession("legacy.json", """{"session_id":"legacy","cwd":${json(project.toString())}}""")
+        val metadata = writeV3Session("sess_v3", """
+            {"schemaVersion":"1.0.0","dataModelVersion":1,"id":"sess_v3","title":"V3 fixture",
+             "workspacePaths":[${json(project.toString())}],"rootPaths":["/ignored-root"],
+             "createdAt":"2026-11-01T09:00:00Z","lastModifiedAt":"2026-11-01T11:00:00Z",
+             "_meta":{"kiro":{"executionTarget":{"kind":"local"},"secret":"not-for-index"}}}
+        """.trimIndent())
+        Files.writeString(metadata.resolveSibling("messages.jsonl"), """
+            {"role":"user","content":"First V3 prompt"}
+            {"role":"assistant","content":"Assistant fixture"}
+            {"role":"user","content":[{"type":"tool_result","text":"Tool output"}]}
+            {"role":"user","content":[{"type":"text","text":"Second V3 prompt"}]}
+        """.trimIndent())
+
+        val sessions = KiroProjectProvider(kiroDirectory()).discover().associateBy { it.sessionId }
+        val found = sessions.getValue("sess_v3")
+
+        assertEquals(setOf("legacy", "sess_v3"), sessions.keys)
+        assertEquals(project.toString(), found.rawProjectPath)
+        assertEquals("V3 fixture", found.metadata["title"])
+        assertEquals("2", found.metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("First V3 prompt", found.metadata[UserMessageTally.FIRST_MESSAGE_KEY])
+        assertEquals(Instant.parse("2026-11-01T09:00:00Z"), found.startedAt)
+        assertEquals(Instant.parse("2026-11-01T11:00:00Z"), found.updatedAt)
+        assertEquals(metadata.toAbsolutePath().normalize().toString(), found.sourcePath)
+        assertEquals(false, found.toString().contains("not-for-index"))
+        assertNull(found.statistics["totalTokens"])
+    }
+
+    @Test
+    fun `should keep V3 sessions without a workspace and use root paths as a fallback`() {
+        val fallback = tempDirectory.resolve("work/fallback").toString()
+        writeV3Session("sess_fallback", """{"schemaVersion":"1.0.0","dataModelVersion":1,"workspacePaths":[],"rootPaths":[${json(fallback)}]}""")
+        writeV3Session("sess_unresolved", """{"schemaVersion":"1.0.0","dataModelVersion":1,"workspacePaths":[],"rootPaths":[]}""")
+
+        val sessions = KiroProjectProvider(kiroDirectory()).discover().associateBy { it.sessionId }
+
+        assertEquals(fallback, sessions.getValue("sess_fallback").rawProjectPath)
+        assertNull(sessions.getValue("sess_unresolved").rawProjectPath)
+        assertNull(sessions.getValue("sess_unresolved").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+    }
+
+    @Test
+    fun `should skip unknown V3 schemas remote targets and nested subagent directories`() {
+        val path = json(tempDirectory.toString())
+        val valid = """{"schemaVersion":"1.0.0","dataModelVersion":1,"workspacePaths":[$path]}"""
+        writeV3Session("sess_valid", valid)
+        writeV3Session("sess_future", valid.replace("1.0.0", "2.0.0"))
+        writeV3Session("sess_future_model", valid.replace("\"dataModelVersion\":1", "\"dataModelVersion\":2"))
+        writeV3Session("sess_remote", valid.dropLast(1) + """, "_meta":{"kiro":{"executionTarget":{"kind":"ssh"}}}}""")
+        writeV3Session("sess_broken", "{unfinished")
+        val nested = Files.createDirectories(kiroDirectory().resolve("sessions/workspace/sess_valid/subagents/sess_child"))
+        Files.writeString(nested.resolve("session.json"), valid)
+
+        assertEquals(listOf("sess_valid"), KiroProjectProvider(kiroDirectory()).discover().map { it.sessionId })
+    }
+
+    @Test
+    fun `should share one scan budget between legacy and V3 stores`() {
+        writeSession("legacy.json", """{"session_id":"legacy","cwd":${json(tempDirectory.toString())}}""")
+        writeV3Session("sess_v3", """{"schemaVersion":"1.0.0","dataModelVersion":1,"workspacePaths":[]}""")
+
+        assertEquals(listOf("legacy"), KiroProjectProvider(kiroDirectory(), maxScanEntries = 3).discover().map { it.sessionId })
+        assertEquals(emptyList<Any>(), KiroProjectProvider(kiroDirectory(), maxScanEntries = 0).discover())
+    }
+
+    private fun writeV3Session(id: String, contents: String): Path {
+        val directory = Files.createDirectories(kiroDirectory().resolve("sessions/workspace/$id"))
+        return Files.writeString(directory.resolve("session.json"), contents).also {
+            Files.setLastModifiedTime(it, FileTime.from(Instant.parse("2026-11-01T10:00:00Z")))
+        }
+    }
+
+    @Test
     fun `should show reported context utilization without estimating token usage or active time`() {
         writeSession("context.json", """{"session_id":"context","cwd":${json(tempDirectory.toString())},"created_at":"2026-08-25T09:00:00Z","updated_at":"2026-08-25T11:00:00Z","session_state":{"rts_model_state":{"model_info":{"context_window_tokens":200000},"context_usage_percentage":7.2627997}}}""")
         val statistics = KiroProjectProvider(kiroDirectory()).discover().single().statistics

@@ -13,6 +13,17 @@ import com.shutterstar.agenthub.environment.skills.sync.ownership.SkillInstanceK
 class SkillSyncAuditStateService(
     private val store: StateStore<SkillSyncAuditState> = AgentHubStorage.state("audit", SkillSyncAuditState::class.java, ::SkillSyncAuditState),
 ) : SyncAuditTrail {
+    private class StoredView(val stamp: String, val state: SkillSyncAuditState)
+
+    @Volatile
+    private var storedView: StoredView? = null
+
+    private fun currentState(): SkillSyncAuditState {
+        val stamp = store.stamp()
+        storedView?.takeIf { it.stamp == stamp }?.let { return it.state }
+        return store.snapshot().also { storedView = StoredView(stamp, it) }
+    }
+
     private var storedState: SkillSyncAuditState
         get() = store.snapshot()
         set(value) { store.update { value } }
@@ -24,13 +35,13 @@ class SkillSyncAuditStateService(
     }
 
     override fun entriesFor(skillId: String): List<SyncAuditEntry> =
-        SkillSyncAuditStateMapper.entriesFor(storedState, skillId)
+        SkillSyncAuditStateMapper.entriesFor(currentState(), skillId)
 
     override fun entriesFor(key: SkillInstanceKey): List<SyncAuditEntry> =
-        SkillSyncAuditStateMapper.entriesFor(storedState, key)
+        SkillSyncAuditStateMapper.entriesFor(currentState(), key)
 
     override fun recentEntries(limit: Int): List<SyncAuditEntry> =
-        SkillSyncAuditStateMapper.recentEntries(storedState, limit)
+        SkillSyncAuditStateMapper.recentEntries(currentState(), limit)
 
     @Synchronized
     override fun record(entry: SyncAuditEntry) {

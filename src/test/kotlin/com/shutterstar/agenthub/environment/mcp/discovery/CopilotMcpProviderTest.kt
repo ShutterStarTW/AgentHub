@@ -16,7 +16,7 @@ class CopilotMcpProviderTest {
     lateinit var temporaryDirectory: Path
 
     @Test
-    fun `should discover personal and both repository MCP formats`() {
+    fun `should prefer local repository MCP and fall back to github MCP only when absent`() {
         val copilotHome = Files.createDirectories(temporaryDirectory.resolve(".copilot"))
         Files.writeString(
             copilotHome.resolve("mcp-config.json"),
@@ -40,12 +40,19 @@ class CopilotMcpProviderTest {
         assertEquals(McpScope.GLOBAL, global.scope)
         assertEquals(setOf("TOKEN"), global.environmentVariableNames)
         assertEquals(null, global.projectName)
-        assertEquals(setOf("local", "shared"), project.keys)
+        assertEquals(setOf("local"), project.keys)
         assertEquals(McpTransport.STDIO, project.getValue("local").transport)
         assertFalse(project.getValue("local").args.any { it.contains("secret") })
-        assertEquals(McpTransport.HTTP, project.getValue("shared").transport)
-        assertEquals(setOf("SHARED_KEY"), project.getValue("shared").environmentVariableNames)
-        assertFalse(project.getValue("shared").url.orEmpty().contains("secret"))
         assertTrue(project.values.all { it.projectName == "project" })
+
+        Files.writeString(projectRoot.resolve(".mcp.json"), "not JSON")
+        assertTrue(provider.discoverProject(project(projectRoot)).isEmpty())
+
+        Files.delete(projectRoot.resolve(".mcp.json"))
+        val shared = provider.discoverProject(project(projectRoot)).single()
+        assertEquals("shared", shared.name)
+        assertEquals(McpTransport.HTTP, shared.transport)
+        assertEquals(setOf("SHARED_KEY"), shared.environmentVariableNames)
+        assertFalse(shared.url.orEmpty().contains("secret"))
     }
 }

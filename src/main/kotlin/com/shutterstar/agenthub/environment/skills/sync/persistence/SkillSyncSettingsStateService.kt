@@ -11,6 +11,11 @@ import com.shutterstar.agenthub.environment.skills.sync.settings.SkillSyncSettin
 class SkillSyncSettingsStateService(
     private val store: StateStore<SkillSyncSettingsState> = AgentHubStorage.state("sync-settings", SkillSyncSettingsState::class.java, ::SkillSyncSettingsState),
 ) {
+    private class StoredView(val stamp: String, val settings: SkillSyncSettings)
+
+    @Volatile
+    private var storedView: StoredView? = null
+
     private var storedState: SkillSyncSettingsState
         get() = store.snapshot()
         set(value) { store.update { value } }
@@ -21,7 +26,13 @@ class SkillSyncSettingsStateService(
         this.storedState = state
     }
 
-    fun current(): SkillSyncSettings = SkillSyncSettingsStateMapper.toSettings(storedState)
+    fun current(): SkillSyncSettings {
+        val stamp = store.stamp()
+        storedView?.takeIf { it.stamp == stamp }?.let { return it.settings }
+        val settings = SkillSyncSettingsStateMapper.toSettings(store.snapshot())
+        storedView = StoredView(stamp, settings)
+        return settings
+    }
 
     @Synchronized
     fun update(settings: SkillSyncSettings) {

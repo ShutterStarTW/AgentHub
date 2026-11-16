@@ -46,6 +46,7 @@ internal class SkillDirectoryScanner(
         budget: ScanBudget,
         system: Boolean = false,
         excludeDirectoryNames: Set<String> = emptySet(),
+        allowedRoot: Path? = null,
     ): List<SkillSourceRecord> {
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
             return emptyList()
@@ -66,6 +67,9 @@ internal class SkillDirectoryScanner(
                         attributes: BasicFileAttributes,
                     ): FileVisitResult {
                         if (!budget.consume()) return FileVisitResult.TERMINATE
+                        if (allowedRoot != null && !isWithinRoot(directory, allowedRoot)) {
+                            return FileVisitResult.SKIP_SUBTREE
+                        }
                         if (directory != root && directory.fileName.toString() in excludeDirectoryNames) {
                             return FileVisitResult.SKIP_SUBTREE
                         }
@@ -84,6 +88,7 @@ internal class SkillDirectoryScanner(
                         attributes: BasicFileAttributes,
                     ): FileVisitResult {
                         if (!budget.consume()) return FileVisitResult.TERMINATE
+                        if (allowedRoot != null && !isWithinRoot(file, allowedRoot)) return FileVisitResult.CONTINUE
                         if (
                             attributes.isSymbolicLink &&
                             Files.isDirectory(file) &&
@@ -103,6 +108,9 @@ internal class SkillDirectoryScanner(
                 readSkill(skillDirectory, agentId, scope, shared, projectName, requireValidMetadata, system)
             }
     }
+
+    private fun isWithinRoot(path: Path, root: Path): Boolean =
+        runCatching { path.toRealPath().startsWith(root) }.getOrDefault(false)
 
     fun discoverNestedProjectSkills(
         projectRoot: Path,

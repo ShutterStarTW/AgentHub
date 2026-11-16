@@ -26,6 +26,7 @@ data class OpenCodeSessionRecord(
     val userMessageCount: Int? = null,
     val firstMessage: String? = null,
     val statistics: Map<String, String> = emptyMap(),
+    val archivedAt: Instant? = null,
 )
 
 /** What differs between OpenCode and its forks: ids, data directory name, database file names, legacy JSON storage. */
@@ -218,6 +219,7 @@ open class OpenCodeFamilyProjectProvider(
         sourcePath = database.toAbsolutePath().normalize().toString(),
         metadata = buildMap {
             title?.let { put("title", it) }
+            archivedAt?.let { put("archivedAt", it.toString()) }
             userMessageCount?.let { count ->
                 put(UserMessageTally.MESSAGE_COUNT_KEY, count.toString())
                 MessageContentExtractor.titleText(firstMessage)?.let { put(UserMessageTally.FIRST_MESSAGE_KEY, it) }
@@ -296,12 +298,16 @@ class OpenCodeSqliteReader(
     private val commandRunner: (List<String>, Long) -> String? = ProcessCommandRunner::run,
 ) {
     fun readSessions(database: Path): List<OpenCodeSessionRecord> {
-        val output = query(database, SESSION_QUERY)
+        val v2Output = if (statisticsAgentId == "opencode") query(database, SESSION_V2_QUERY) else null
+        val v2 = v2Output != null
+        val output = v2Output ?: query(database, SESSION_QUERY)
             ?: throw IOException("sqlite3 is unavailable or could not read the database")
         val sessions = output.lineSequence().mapNotNull(::parseRow).toList()
-        val stats = query(database, USER_MESSAGE_QUERY)?.lineSequence()?.mapNotNull(::parseStatsRow)?.toMap().orEmpty()
+        val statsOutput = query(database, if (v2) USER_MESSAGE_V2_QUERY else USER_MESSAGE_QUERY)
+        val stats = statsOutput?.lineSequence()?.mapNotNull(::parseStatsRow)?.toMap().orEmpty()
         val usage = linkedMapOf<String, SessionStatisticsAccumulator>()
-        (query(database, USAGE_QUERY) ?: query(database, MESSAGE_USAGE_QUERY))?.lineSequence()?.forEach { line ->
+        val usageOutput = if (v2) query(database, USAGE_V2_QUERY) else query(database, USAGE_QUERY) ?: query(database, MESSAGE_USAGE_QUERY)
+        usageOutput?.lineSequence()?.forEach { line ->
             val columns = line.split('\t')
             if (columns.size != 2) return@forEach
             val sessionId = decodeHex(columns[0]) ?: return@forEach
@@ -313,7 +319,7 @@ class OpenCodeSqliteReader(
         return sessions.map { session ->
             val user = stats[session.id]
             usage[session.id]?.recordedBounds(session.createdAt, session.updatedAt)
-            session.copy(userMessageCount = user?.first ?: if (stats.isEmpty()) null else 0, firstMessage = user?.second,
+            session.copy(userMessageCount = user?.first ?: if (statsOutput == null) null else 0, firstMessage = user?.second,
                 statistics = usage[session.id]?.snapshot().orEmpty())
         }
     }
@@ -343,7 +349,7 @@ class OpenCodeSqliteReader(
     private fun parseRow(line: String): OpenCodeSessionRecord? {
         if (line.isBlank()) return null
         val columns = line.split('\t')
-        if (columns.size != EXPECTED_COLUMN_COUNT) return null
+        if (columns.size != EXPECTED_COLUMN_COUNT && columns.size != EXPECTED_COLUMN_COUNT + 1) return null
         val id = decodeHex(columns[0])?.takeIf { it.isNotBlank() } ?: return null
         val directory = decodeHex(columns[1])?.takeIf { it.isNotBlank() } ?: return null
         val title = decodeHex(columns[2])?.takeIf { it.isNotBlank() }
@@ -353,6 +359,7 @@ class OpenCodeSqliteReader(
             title = title,
             createdAt = epochMillis(columns[3]),
             updatedAt = epochMillis(columns[4]),
+            archivedAt = columns.getOrNull(5)?.let(::epochMillis),
         )
     }
 
@@ -376,6 +383,21 @@ class OpenCodeSqliteReader(
         private const val SESSION_QUERY =
             "SELECT hex(id), hex(directory), hex(title), time_created, time_updated " +
                 "FROM session ORDER BY time_updated DESC LIMIT 20000;"
+        private const val SESSION_V2_QUERY =
+            "SELECT hex(id), hex(directory), hex(title), time_created, time_updated, time_archived " +
+                "FROM session_v2 ORDER BY time_updated DESC LIMIT 20000;"
+        private const val USER_MESSAGE_V2_QUERY =
+            "SELECT hex(m.session_id), COUNT(*), hex(COALESCE((" +
+                "SELECT substr(json_extract(first.data, '$.text'), 1, 2000) FROM session_message first " +
+                "WHERE first.session_id=m.session_id AND first.type='user' AND json_valid(first.data) " +
+                "ORDER BY first.seq LIMIT 1), '')) " +
+                "FROM session_message m WHERE m.type='user' AND json_valid(m.data) GROUP BY m.session_id;"
+        // V2 stores typed messages; select only usage fields, never the assistant content or tool arguments.
+        private const val USAGE_V2_QUERY =
+            "SELECT hex(session_id), hex(json_object('id',id,'role',type," +
+                "'modelID',json_extract(data,'$.model.modelID'),'time',json_extract(data,'$.time')," +
+                "'tokens',json_extract(data,'$.tokens'),'cost',json_extract(data,'$.cost'))) " +
+                "FROM session_message WHERE json_valid(data) ORDER BY time_created,seq LIMIT 200000;"
         private const val STATS_COLUMN_COUNT = 3
         private const val MESSAGE_USAGE_QUERY =
             "SELECT hex(session_id), hex(json_object('id',id,'role',json_extract(data,'$.role')," +

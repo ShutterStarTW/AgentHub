@@ -121,6 +121,18 @@ class ConfigDiscoveryTest {
     }
 
     @Test
+    fun `should inventory Copilot compatible Claude settings without exposing secret values`() {
+        val root = Files.createDirectories(home.resolve("copilot-project"))
+        write("copilot-project/.claude/settings.json", """{"model":"example","apiKey":"private-token"}""")
+
+        val source = CopilotConfigProvider(home).discoverProject(project(root)).single()
+
+        assertTrue(source.path.endsWith(".claude/settings.json".replace('/', java.io.File.separatorChar)))
+        assertEquals("copilot", source.agentId)
+        assertFalse(source.toString().contains("private-token"))
+    }
+
+    @Test
     fun `should scan nested project settings with exclusions and depth bound`() {
         val root = Files.createDirectories(home.resolve("project"))
         val relative = listOf(".claude/settings.local.json", ".codex/config.toml", ".cursor/cli.json", ".grok/config.toml",

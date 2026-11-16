@@ -8,6 +8,7 @@ import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -142,23 +143,51 @@ class AgentHubHome(
     }
 
     internal fun requireSafePath(path: Path) {
-        generateSequence(path.toAbsolutePath().normalize()) { it.parent }.forEach {
-            if (Files.exists(it, NOFOLLOW_LINKS)) {
-                val attributes = Files.readAttributes(it, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+        var current: Path? = path.toAbsolutePath().normalize()
+        while (current != null) {
+            try {
+                val attributes = Files.readAttributes(current, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
                 require(!attributes.isSymbolicLink && !attributes.isOther) { "Linked AgentHub data locations are not supported" }
+            } catch (_: NoSuchFileException) {
+                // Non-existent path segments are safe until created.
             }
+            current = current.parent
         }
     }
 
+    /** Validates the ancestor chain and returns [path]'s attributes in a single pass. */
+    internal fun safeAttributes(path: Path): BasicFileAttributes {
+        val normalized = path.toAbsolutePath().normalize()
+        var targetAttributes: BasicFileAttributes? = null
+        var missingTarget: NoSuchFileException? = null
+        var current: Path? = normalized
+        while (current != null) {
+            try {
+                val attributes = Files.readAttributes(current, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+                require(!attributes.isSymbolicLink && !attributes.isOther) { "Linked AgentHub data locations are not supported" }
+                if (current == normalized) targetAttributes = attributes
+            } catch (e: NoSuchFileException) {
+                if (current == normalized) missingTarget = e
+            }
+            current = current.parent
+        }
+        if (missingTarget != null) throw missingTarget
+        return targetAttributes!!
+    }
+
     internal fun permissions(path: Path, directory: Boolean = false) {
-        if (Files.getFileStore(path).supportsFileAttributeView("posix")) {
-            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(if (directory) "rwx------" else "rw-------"))
+        if ("posix" in path.fileSystem.supportedFileAttributeViews() &&
+            Files.getFileStore(path).supportsFileAttributeView("posix")
+        ) {
+            Files.setPosixFilePermissions(path, if (directory) POSIX_DIR_PERMISSIONS else POSIX_FILE_PERMISSIONS)
         }
     }
 
     companion object {
         private val LOG = Logger.getLogger(AgentHubHome::class.java.name)
         private val disabledBackupRoot = Path.of(System.getProperty("java.io.tmpdir"), "agenthub-unavailable-${UUID.randomUUID()}")
+        private val POSIX_DIR_PERMISSIONS = PosixFilePermissions.fromString("rwx------")
+        private val POSIX_FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-------")
 
         fun resolvePath(
             userHome: Path = AgentRuntime.hostHome(),

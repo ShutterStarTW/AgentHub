@@ -1,11 +1,19 @@
 package com.shutterstar.agenthub.environment.skills.sync.persistence
 
+import com.shutterstar.agenthub.storage.CopyableState
+
 data class SkillOwnershipState(
     var schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     var entries: MutableList<SkillOwnershipEntryState> = mutableListOf(),
     /** Removal stamps prevent later imports from resurrecting older ownership records. */
     var removedEntries: MutableList<SkillOwnershipEntryState> = mutableListOf(),
-) {
+) : CopyableState<SkillOwnershipState> {
+    override fun deepCopy(): SkillOwnershipState = SkillOwnershipState(
+        schemaVersion = schemaVersion,
+        entries = entries.mapTo(ArrayList(entries.size)) { it.copy() },
+        removedEntries = removedEntries.mapTo(ArrayList(removedEntries.size)) { it.copy() },
+    )
+
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1
     }

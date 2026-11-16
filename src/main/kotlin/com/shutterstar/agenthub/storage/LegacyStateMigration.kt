@@ -1,7 +1,6 @@
 package com.shutterstar.agenthub.storage
 
 import com.intellij.openapi.util.JDOMUtil
-import com.intellij.util.xmlb.XmlSerializer
 import com.shutterstar.agenthub.OsDetector
 import com.shutterstar.agenthub.environment.mcp.discovery.JsonArray
 import com.shutterstar.agenthub.environment.mcp.discovery.JsonObject
@@ -116,9 +115,8 @@ class LegacyStateMigration(
         if (!Files.exists(path, NOFOLLOW_LINKS)) return null
         val bytes = Files.newInputStream(path, NOFOLLOW_LINKS).use { it.readNBytes(32 * 1024 * 1024 + 1) }
         require(bytes.size <= 32 * 1024 * 1024)
-        val raw = String(bytes, Charsets.UTF_8)
-        require(!Regex("<!DOCTYPE|<!ENTITY", RegexOption.IGNORE_CASE).containsMatchIn(raw))
-        val text = expandMacros(raw)
+        require(!SharedXmlStore.containsForbiddenXmlDeclaration(bytes))
+        val text = expandMacros(String(bytes, Charsets.UTF_8))
         val document = JDOMUtil.load(text.byteInputStream())
         val element = when (document.name) {
             "application" -> document.getChildren("component").single { it.getAttributeValue("name") == componentName }
@@ -126,7 +124,7 @@ class LegacyStateMigration(
             type.simpleName -> document
             else -> error("Unexpected legacy state root")
         }
-        return XmlSerializer.deserialize(element, type)
+        return XmlStateCodecs.deserialize(element, type)
     }
 
     private fun expandMacros(text: String): String {

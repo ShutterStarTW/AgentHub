@@ -14,6 +14,17 @@ class SkillOwnershipStateService(
     private val store: StateStore<SkillOwnershipState> = AgentHubStorage.state("ownership", SkillOwnershipState::class.java, ::SkillOwnershipState),
     private val now: () -> Long = System::currentTimeMillis,
 ) : SyncOwnershipStore {
+    private class StoredView(val stamp: String, val state: SkillOwnershipState)
+
+    @Volatile
+    private var storedView: StoredView? = null
+
+    private fun currentState(): SkillOwnershipState {
+        val stamp = store.stamp()
+        storedView?.takeIf { it.stamp == stamp }?.let { return it.state }
+        return store.snapshot().also { storedView = StoredView(stamp, it) }
+    }
+
     private var storedState: SkillOwnershipState
         get() = store.snapshot()
         set(value) { store.update { value } }
@@ -25,10 +36,10 @@ class SkillOwnershipStateService(
     }
 
     override fun managedTarget(key: SkillInstanceKey, agentId: String): ManagedTarget? =
-        SkillOwnershipStateMapper.managedTarget(storedState, key, agentId)
+        SkillOwnershipStateMapper.managedTarget(currentState(), key, agentId)
 
     override fun managedTargetsFor(key: SkillInstanceKey): List<ManagedTarget> =
-        SkillOwnershipStateMapper.managedTargetsFor(storedState, key)
+        SkillOwnershipStateMapper.managedTargetsFor(currentState(), key)
 
     @Synchronized
     override fun record(key: SkillInstanceKey, target: ManagedTarget) {
@@ -46,10 +57,10 @@ class SkillOwnershipStateService(
     }
 
     override fun managedTarget(skillId: String, agentId: String): ManagedTarget? =
-        SkillOwnershipStateMapper.managedTarget(storedState, skillId, agentId)
+        SkillOwnershipStateMapper.managedTarget(currentState(), skillId, agentId)
 
     override fun managedTargetsFor(skillId: String): List<ManagedTarget> =
-        SkillOwnershipStateMapper.managedTargetsFor(storedState, skillId)
+        SkillOwnershipStateMapper.managedTargetsFor(currentState(), skillId)
 
     @Synchronized
     override fun record(skillId: String, target: ManagedTarget) {

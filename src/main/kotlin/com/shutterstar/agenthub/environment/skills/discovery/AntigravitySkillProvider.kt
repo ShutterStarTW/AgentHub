@@ -2,6 +2,11 @@ package com.shutterstar.agenthub.environment.skills.discovery
 
 import com.shutterstar.agenthub.ScanBudget
 import com.shutterstar.agenthub.environment.discovery.AntigravityHomeSupport
+import com.shutterstar.agenthub.environment.mcp.discovery.JsonArray
+import com.shutterstar.agenthub.environment.mcp.discovery.JsonObject
+import com.shutterstar.agenthub.environment.mcp.discovery.JsonString
+import com.shutterstar.agenthub.environment.mcp.discovery.McpConfigFileReader
+import com.shutterstar.agenthub.environment.mcp.discovery.SafeJsonParser
 import com.shutterstar.agenthub.environment.skills.model.SkillScope
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectPathResolver
@@ -87,8 +92,9 @@ class AntigravitySkillProvider(
         budget: ScanBudget,
     ): List<SkillSourceRecord> =
         AntigravityHomeSupport.forEachPluginDirectory(pluginDirs, MAX_PLUGIN_ENTRIES) { pluginDir ->
-            val skillDir = pluginDir.resolve(SKILLS_DIRECTORY)
-            if (Files.isDirectory(skillDir, LinkOption.NOFOLLOW_LINKS)) {
+            val realRoot = runCatching { pluginDir.toRealPath() }.getOrNull()
+                ?: return@forEachPluginDirectory emptyList()
+            pluginSkillDirectories(realRoot).flatMap { skillDir ->
                 scanner.discover(
                     root = skillDir,
                     agentId = agentId,
@@ -97,11 +103,33 @@ class AntigravitySkillProvider(
                     projectName = projectName,
                     requireValidMetadata = false,
                     budget = budget,
+                    allowedRoot = realRoot,
                 )
-            } else {
-                emptyList()
             }
         }
+
+    private fun pluginSkillDirectories(root: Path): List<Path> {
+        val manifestPath = PLUGIN_MANIFESTS.map(root::resolve).firstOrNull {
+            Files.isRegularFile(it, LinkOption.NOFOLLOW_LINKS) &&
+                runCatching { it.toRealPath().startsWith(root) }.getOrDefault(false)
+        }
+        val manifest = manifestPath?.let(McpConfigFileReader::read)?.let(SafeJsonParser::parse) as? JsonObject
+        val extraPaths = when (val value = manifest?.fields?.get(SKILLS_DIRECTORY)) {
+            is JsonString -> listOf(value.value)
+            is JsonArray -> value.values.take(MAX_PLUGIN_ENTRIES).mapNotNull { (it as? JsonString)?.value }
+            else -> emptyList()
+        }
+        return (listOf(SKILLS_DIRECTORY) + extraPaths).mapNotNull { relative ->
+            runCatching {
+                val path = Path.of(relative)
+                if (path.isAbsolute) return@runCatching null
+                val resolved = root.resolve(path).normalize()
+                resolved.takeIf {
+                    it.startsWith(root) && Files.isDirectory(it) && it.toRealPath().startsWith(root)
+                }
+            }.getOrNull()
+        }.distinct()
+    }
 
     private fun globalRoots(): List<Path> {
         val gemini = homeDirectory.resolve(GEMINI_DIRECTORY)
@@ -162,6 +190,7 @@ class AntigravitySkillProvider(
         const val SKILLS_DIRECTORY = "skills"
         const val PLUGINS_DIRECTORY = "plugins"
         const val MAX_PLUGIN_ENTRIES = 128
+        val PLUGIN_MANIFESTS = listOf(".antigravity-plugin/plugin.json", "plugin.json", ".claude-plugin/plugin.json")
 
         val PROJECT_OWNER_DIRECTORIES = listOf(
             LEGACY_AGENT_DIRECTORY,

@@ -29,6 +29,15 @@ class NativeResumeCommandsTest {
         assertEquals("junie --resume --session-id=$id", NativeResumeCommands.command("junie", id))
         assertEquals("mimo --session $id", NativeResumeCommands.command("mimo", id))
         assertEquals("vibe --resume $id", NativeResumeCommands.command("vibe", id))
+        assertEquals("pi --session $id", NativeResumeCommands.command("pi", id))
+        assertEquals("hermes --resume 20261117_100000_ab12cd", NativeResumeCommands.command("hermes", "20261117_100000_ab12cd"))
+    }
+
+    @Test
+    fun `should resume an OpenClaw conversation by its session key`() {
+        assertEquals("openclaw resume agent:main:main", NativeResumeCommands.command("openclaw", "agent:main:main"))
+        assertNull(NativeResumeCommands.unavailableReason("openclaw", "agent:ops:bugfix"))
+        assertNotNull(NativeResumeCommands.unavailableReason("openclaw", "agent:main:main; rm -rf /"))
     }
 
     @Test

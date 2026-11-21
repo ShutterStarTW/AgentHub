@@ -14,7 +14,7 @@ import com.shutterstar.agenthub.AgentRuntime
 
 class OpenCodeInstructionProvider(
     homeDirectory: Path = AgentRuntime.userHome(),
-    private val majorVersion: () -> Int? = ::detectMajorVersion,
+    private val version: () -> OpenCodeVersion? = ::detectVersion,
 ) : InstructionProvider {
     override val agentId: String = AGENT_ID
     private val globalFile = EnvHomeDirectorySupport.resolveXdgGuarded(
@@ -24,7 +24,7 @@ class OpenCodeInstructionProvider(
         "opencode",
     ).resolve(AGENTS_FILE)
     private val globalClaudeFile = homeDirectory.resolve(".claude").resolve(CLAUDE_FILE)
-    private val usesClaudeFallback by lazy { majorVersion() != 2 }
+    private val usesClaudeFallback by lazy { version()?.readsClaudeFallback() ?: true }
 
     override fun discoverGlobal(): List<InstructionSource> = listOfNotNull(
         InstructionFileSupport.source(
@@ -63,14 +63,14 @@ class OpenCodeInstructionProvider(
         const val AGENTS_FILE = "AGENTS.md"
         const val CLAUDE_FILE = "CLAUDE.md"
 
-        fun detectMajorVersion(): Int? = try {
+        fun detectVersion(): OpenCodeVersion? = try {
             val process = ProcessBuilder("opencode", "--version").redirectErrorStream(true).start()
             if (!process.waitFor(3, TimeUnit.SECONDS)) {
                 process.destroyForcibly()
                 null
             } else {
                 process.inputStream.bufferedReader().use { reader ->
-                    Regex("\\b(\\d+)\\.\\d+").find(reader.readText())?.groupValues?.get(1)?.toIntOrNull()
+                    OpenCodeVersion.parse(reader.readText())
                 }
             }
         } catch (_: IOException) {
@@ -78,6 +78,20 @@ class OpenCodeInstructionProvider(
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             null
+        }
+    }
+}
+
+// A 2.0.0-tól 2.3.0-ig az OpenCode nem olvasta a CLAUDE.md-t, a 2.3.1 visszahozta.
+data class OpenCodeVersion(val major: Int, val minor: Int, val patch: Int) {
+    fun readsClaudeFallback(): Boolean = major != 2 || minor > 3 || (minor == 3 && patch >= 1)
+
+    companion object {
+        private val pattern = Regex("\\b(\\d+)\\.(\\d+)(?:\\.(\\d+))?")
+
+        fun parse(text: String): OpenCodeVersion? = pattern.find(text)?.let { match ->
+            val (major, minor, patch) = match.destructured
+            OpenCodeVersion(major.toInt(), minor.toInt(), patch.toIntOrNull() ?: 0)
         }
     }
 }

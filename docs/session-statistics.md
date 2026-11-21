@@ -18,6 +18,7 @@ Info rows show only nonempty text and positive numeric measurements. Missing and
 | Kiro | Legacy session JSON and adjacent transcript JSONL; V3 sessions supply prompt counts only | Routed models when recorded, tools/errors, edit prompts, context-window size, reported context percentage and elapsed time |
 | Cursor | `meta.json` and `prompt_history.json` | Native title, prompt count, consecutive repeated prompts and elapsed time. The binary conversation store is not decoded |
 | Antigravity | Conversation metadata and transcript steps | Native title, prompts, tools, edit prompts and event timing. Inspected transcript steps do not provide token usage or model pricing |
+| Pi, Oh My Pi | Session JSONL | Session name, prompt count and consecutive repeated prompts. Tokens, models and tools are not read |
 
 All providers retain their existing project/session IDs, source locations, recorded dates and first-prompt fallback where available. Consecutive repeated prompts are counted from actual user input; the count does not imply that the previous response failed.
 

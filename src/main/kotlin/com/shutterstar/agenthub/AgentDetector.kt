@@ -212,6 +212,10 @@ object AgentDetector {
     internal fun shellOutput(commandLine: String, timeoutSeconds: Long = 10, executionSettings: WslSupport.Settings = WslSupport.settings): String =
         runSilent(shellArgv(commandLine, executionSettings), timeoutSeconds)
 
+    /** Unlike [shellOutput], keeps the output of a non-zero exit: status commands print "not logged in" and fail. */
+    internal fun shellOutputAnyExit(commandLine: String, timeoutSeconds: Long = 10, executionSettings: WslSupport.Settings = WslSupport.settings): String =
+        runSilentResult(shellArgv(commandLine, executionSettings), timeoutSeconds).output
+
     private fun runSilent(cmd: Array<String>, timeoutSeconds: Long): String =
         runSilentResult(cmd, timeoutSeconds).let { if (it.exitCode == 0) it.output else "" }
 

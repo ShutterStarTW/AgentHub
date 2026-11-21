@@ -76,6 +76,20 @@ internal object EnvHomeDirectorySupport {
     }
 
     /**
+     * The trimmed, non-blank value of an env var that is not a path (a profile name), or null when it is unset or
+     * [homeDirectory] is not the system default (test isolation, same guard as [resolveGuarded]).
+     */
+    fun guardedValue(
+        envVar: String,
+        homeDirectory: Path,
+        configuredValue: String? = System.getenv(envVar),
+    ): String? {
+        val defaultHome = Path.of(System.getProperty("user.home"))
+        if (homeDirectory.toAbsolutePath().normalize() != defaultHome.toAbsolutePath().normalize()) return null
+        return configuredValue?.trim()?.takeIf(String::isNotEmpty)
+    }
+
+    /**
      * Resolves an XDG-style config root: `$<envVar>/<appName>` when the env var is set, else
      * `<homeDirectory>/<defaultBaseDirName>/<appName>` (e.g. `~/.config/<appName>` for
      * `XDG_CONFIG_HOME`). Same test-isolation guard as [resolveGuarded] — the env var is only

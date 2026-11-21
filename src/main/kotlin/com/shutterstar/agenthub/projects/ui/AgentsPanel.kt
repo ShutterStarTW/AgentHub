@@ -10,6 +10,8 @@ import com.shutterstar.agenthub.environment.discovery.AgentEnvironmentDiscoveryS
 import com.shutterstar.agenthub.environment.discovery.ProjectEnvironmentDiscoveryService
 import com.shutterstar.agenthub.environment.skills.model.SkillScope
 import com.shutterstar.agenthub.environment.ui.EnvironmentPanel
+import com.shutterstar.agenthub.usage.model.AgentUsageSnapshot
+import com.shutterstar.agenthub.usage.ui.UsageDetailsPanel
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import java.awt.BorderLayout
 import java.awt.Color
@@ -32,7 +34,7 @@ internal class AgentsPanel(
     environmentDiscovery: ProjectEnvironmentDiscoveryService,
     agentEnvironmentDiscovery: AgentEnvironmentDiscoveryService,
     openSkill: (SkillScope, String, String?, DiscoveredProject?) -> Unit = { _, _, _, _ -> },
-    /** Double-click / Enter on a project row: jump to that project on the Projects tab. */
+    /** Click / Enter on a project row: jump to that project on the Projects tab. */
     openProject: (projectId: String) -> Unit = {},
     sessionActions: SessionActions = SessionActions(),
     splitProportion: SharedSplitProportion = SharedSplitProportion(),
@@ -42,6 +44,7 @@ internal class AgentsPanel(
         val settings = AgentSettingsState.getInstance()
         agentInstallationStatus(agentId, settings.getDetectionResults(), settings.getDetectionTimestamp())
     },
+    signInToUsage: (String) -> Unit = {},
 ) : JPanel(BorderLayout()) {
     private val model = DefaultListModel<DiscoveredAgentSummary>()
     private val list = RendererToolTipList(model)
@@ -53,6 +56,7 @@ internal class AgentsPanel(
         openProject,
         sessionActions,
         installationStatus,
+        signInToUsage,
     )
     private var projects: List<DiscoveredProject> = emptyList()
     private var environmentLabels: Map<String, String> = emptyMap()
@@ -129,6 +133,20 @@ internal class AgentsPanel(
         }
         detailsPanel.showDefaultTab()
     }
+
+    /** Selects the agent row with [agentId], returning false when it is not currently in the filtered list. */
+    fun selectAgent(agentId: String): Boolean {
+        val index = (0 until model.size()).firstOrNull { model.getElementAt(it).agentId == agentId } ?: return false
+        list.selectedIndex = index
+        list.ensureIndexIsVisible(index)
+        detailsPanel.setAgent(list.selectedValue, projects, list.selectedValue?.agentId?.let(environmentLabels::get))
+        responsive.selectionChanged()
+        // Opens the details when the layout is narrow, like a deep link to a project does.
+        responsive.showDetailsNow()
+        retryLink.isVisible = list.selectedValue?.agentId?.let(hasEnvironmentFailure) == true
+        return true
+    }
+
     fun setAgents(
         agents: List<DiscoveredAgentSummary>,
         projects: List<DiscoveredProject>,
@@ -158,6 +176,8 @@ internal class AgentsPanel(
             list.emptyText.appendLine("Clear search", SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) { onClearSearch() }
         }
     }
+
+    fun setUsageSnapshots(snapshots: List<AgentUsageSnapshot>) = detailsPanel.setUsageSnapshots(snapshots)
 
     fun setEnvironmentLabels(labels: Map<String, String>) {
         environmentLabels = labels
@@ -202,8 +222,11 @@ internal class AgentsPanel(
         private val openProject: (String) -> Unit,
         sessionActions: SessionActions,
         private val installationStatus: (String) -> String,
+        signInToUsage: (String) -> Unit,
     ) : JPanel(BorderLayout()) {
         private val header = DetailsHeader()
+        private val usageDetails = UsageDetailsPanel(signIn = signInToUsage, embedded = true)
+        private var usageSnapshots: Map<String, AgentUsageSnapshot> = emptyMap()
         private val projectModel = DefaultListModel<AgentProjectUsage>()
         private val projectList = RendererToolTipList(projectModel)
         private val sessionsPanel = SessionsPanel(actions = sessionActions)
@@ -236,7 +259,7 @@ internal class AgentsPanel(
             }
             projectList.addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(event: MouseEvent) {
-                    if (!SwingUtilities.isLeftMouseButton(event) || event.clickCount != 2) return
+                    if (!SwingUtilities.isLeftMouseButton(event) || event.clickCount != 1) return
                     val index = projectList.locationToIndex(event.point)
                     if (index < 0 || projectList.getCellBounds(index, index)?.contains(event.point) != true) return
                     openProject(projectModel.getElementAt(index).projectId)
@@ -245,6 +268,7 @@ internal class AgentsPanel(
             tabs.addTab("Projects", AgentHubUiComponents.alignedBorderlessScrollPane(projectList))
             tabs.addTab("Sessions", sessionsPanel)
             tabs.addTab("Environment", environmentPanel)
+            tabs.addTab("Usage", usageDetails)
             add(header, BorderLayout.NORTH)
             add(tabs, BorderLayout.CENTER)
         }
@@ -279,6 +303,7 @@ internal class AgentsPanel(
             projectModel.addAll(agent?.projects.orEmpty())
             if (agentChanged) AgentHubUiComponents.scrollToTop(projectList)
             projectList.emptyText.text = if (agent == null) "Select an agent" else "No projects discovered"
+            usageDetails.setSnapshot(agent?.agentId?.let(usageSnapshots::get))
             val scope = agent?.let { DetailsScope.ForAgent(it.agentId, projects) }
             sessionsPanel.setScope(scope)
             environmentPanel.setScope(scope)
@@ -287,6 +312,11 @@ internal class AgentsPanel(
         fun setEnvironmentLabel(label: String?) {
             environmentLabel = label
             updateHeader()
+        }
+
+        fun setUsageSnapshots(snapshots: List<AgentUsageSnapshot>) {
+            usageSnapshots = snapshots.associateBy { it.agentId }
+            usageDetails.setSnapshot(shownAgentId?.let(usageSnapshots::get))
         }
 
         private fun updateHeader() {
@@ -309,7 +339,7 @@ internal class AgentsPanel(
         hover: ListHoverTracker,
     ) : DetailRowRenderer<AgentProjectUsage>(hover, MAX_DETAIL_LINES) {
         private val openHint = JBLabel("↗").apply {
-            toolTipText = "Double-click to open project details"
+            toolTipText = "Click to open project details"
             accessibleContext.accessibleName = "Open project details"
         }
 
@@ -321,10 +351,10 @@ internal class AgentsPanel(
             val activity = value.lastActivity?.let(AgentHubUiFormat.dateTime::format) ?: "Unknown"
             return DetailRow(
                 title = "${value.projectName} · ${value.sessionCount} sessions",
-                titleTooltip = "Double-click to open project details",
+                titleTooltip = "Click to open project details",
                 details = agentProjectUsageDetailLines(value, activity),
                 rowAccessibleName =
-                    "${value.projectName}, ${value.sessionCount} sessions. Open project details with Enter or double-click.",
+                    "${value.projectName}, ${value.sessionCount} sessions. Open project details with Enter or a click.",
             )
         }
 

@@ -183,8 +183,8 @@ bump, a `CHANGES.md` line, a new `plugin.xml` change-notes block, a
 pushed explicitly with `git push origin vX.Y.Z`, since a plain `git push` does not push tags.
 
 Pushing the tag starts the **Release** workflow (`.github/workflows/release.yml`): it checks that the tag
-matches `VERSION.md` and that `CHANGES.md` has an entry for the version, runs the build and tests, and
-publishes a GitHub Release with `agenthub-X.Y.Z.zip` attached and that `CHANGES.md` line as its text.
+matches `VERSION.md` and that `docs/changelog.md` has a non-empty `## X.Y.Z` section, runs the build and tests, and
+publishes a GitHub Release with `agenthub-X.Y.Z.zip` attached and that changelog section as its text.
 Uploading the ZIP to the JetBrains Marketplace is still done by hand.
 
 ### Adding a companion tool

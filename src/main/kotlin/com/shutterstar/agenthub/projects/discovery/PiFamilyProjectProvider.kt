@@ -1,7 +1,9 @@
 package com.shutterstar.agenthub.projects.discovery
 
+import com.shutterstar.agenthub.AgentRuntime
 import com.shutterstar.agenthub.ScanBudget
 import com.shutterstar.agenthub.environment.discovery.OmpHomeSupport
+import com.shutterstar.agenthub.environment.discovery.PiHomeSupport
 import com.shutterstar.agenthub.projects.model.RawAgentProject
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -9,23 +11,22 @@ import java.nio.file.Path
 import java.time.Instant
 import java.util.logging.Logger
 import kotlin.io.path.extension
-import com.shutterstar.agenthub.AgentRuntime
 
 /**
- * Oh My Pi (`omp`) sessions: `<agent dir>/sessions/<encoded-cwd>/<timestamp>_<sessionId>.jsonl`. The directory name is a
+ * Sessions of Pi and its fork Oh My Pi: `<sessions>/<encoded-cwd>/<timestamp>_<sessionId>.jsonl`. The directory name is a
  * lossy encoding of the cwd, so the working directory is read from the `type:"session"` header (which follows the
- * fixed-width `type:"title"` slot of current files; legacy files start with the header). Only the top-level `*.jsonl`
- * of each bucket is a session — the same-named sub-directories hold artifacts and sub-agent transcripts.
- * A user message is a `type:"message"` entry with `role:"user"` and `attribution:"user"` (or none, in older files);
- * agent-injected prompts carry `attribution:"agent"` or are `custom_message` entries.
+ * fixed-width `type:"title"` slot of current Oh My Pi files; legacy files and Pi start with the header). Only the top-level
+ * `*.jsonl` of each bucket is a session - the same-named sub-directories hold artifacts and sub-agent transcripts.
+ * A user message is a `type:"message"` entry with `role:"user"` and `attribution:"user"` (or none, as in Pi and older
+ * Oh My Pi files); agent-injected prompts carry `attribution:"agent"`, and `custom`/`custom_message` entries or other roles
+ * are not user input. Pi keeps the session name in a `type:"session_info"` entry (the last one wins); Oh My Pi in the header.
  */
-class OmpProjectProvider(
-    private val agentDirectory: Path = OmpHomeSupport.agentDirectory(AgentRuntime.userHome()),
+open class PiFamilyProjectProvider(
+    final override val agentId: String,
+    private val agentLabel: String,
+    private val sessionsDirectory: Path,
+    private val readsSessionInfoName: Boolean,
 ) : AgentProjectProvider {
-    override val agentId: String = AGENT_ID
-
-    private val sessionsDirectory = agentDirectory.resolve(SESSIONS_DIRECTORY)
-
     override fun isAvailable(): Boolean = Files.isDirectory(sessionsDirectory, LinkOption.NOFOLLOW_LINKS)
 
     override fun discover(): List<RawAgentProject> {
@@ -39,7 +40,7 @@ class OmpProjectProvider(
                 if (session == null) skipped++ else sessions += session
             }
         }
-        if (skipped > 0) LOG.fine("[ProjectDiscovery] Oh My Pi: skipped $skipped malformed or unreadable sessions")
+        if (skipped > 0) LOG.fine("[ProjectDiscovery] $agentLabel: skipped $skipped malformed or unreadable sessions")
         return LocalSessionSupport.deduplicate(sessions)
     }
 
@@ -72,14 +73,21 @@ class OmpProjectProvider(
         val resolvedId = sessionId ?: return null
         val resolvedCwd = cwd ?: return null
         val statistics = SessionStatisticsAccumulator(agentId)
-        val tally = UserMessageTally.scanJsonl(file, SCAN_MARKERS) { line ->
-            if (MetadataJsonParser.topLevelStringFields(line, TYPE_ONLY)[TYPE_FIELD] != MESSAGE_TYPE) return@scanJsonl
-            if (MetadataJsonParser.stringAtPath(line, MESSAGE_FIELD, ROLE_FIELD) != USER_ROLE) return@scanJsonl
-            val attribution = MetadataJsonParser.stringAtPath(line, MESSAGE_FIELD, ATTRIBUTION_FIELD)
-            if (attribution != null && attribution != USER_ATTRIBUTION) return@scanJsonl
-            val text = MetadataJsonParser.rawPath(line, MESSAGE_FIELD, CONTENT_FIELD)?.let(MessageContentExtractor::text)
-            add(text)
-            statistics.userPrompt(text)
+        var sessionName: String? = null
+        val tally = UserMessageTally.scanJsonl(file, scanMarkers) { line ->
+            when (MetadataJsonParser.topLevelStringFields(line, TYPE_ONLY)[TYPE_FIELD]) {
+                SESSION_INFO_TYPE -> if (readsSessionInfoName) {
+                    sessionName = MetadataJsonParser.topLevelStringFields(line, NAME_ONLY)[NAME_FIELD]?.takeIf { it.isNotBlank() } ?: sessionName
+                }
+                MESSAGE_TYPE -> {
+                    if (MetadataJsonParser.stringAtPath(line, MESSAGE_FIELD, ROLE_FIELD) != USER_ROLE) return@scanJsonl
+                    val attribution = MetadataJsonParser.stringAtPath(line, MESSAGE_FIELD, ATTRIBUTION_FIELD)
+                    if (attribution != null && attribution != USER_ATTRIBUTION) return@scanJsonl
+                    val text = MetadataJsonParser.rawPath(line, MESSAGE_FIELD, CONTENT_FIELD)?.let(MessageContentExtractor::text)
+                    add(text)
+                    statistics.userPrompt(text)
+                }
+            }
         }
         val modifiedAt = LocalSessionSupport.modifiedAt(file)
         return RawAgentProject(
@@ -89,14 +97,15 @@ class OmpProjectProvider(
             startedAt = startedAt,
             updatedAt = LocalSessionSupport.latest(startedAt, modifiedAt),
             sourcePath = file.toAbsolutePath().normalize().toString(),
-            metadata = tally?.metadata().orEmpty() + listOfNotNull(title?.let { TITLE_FIELD to it }),
+            metadata = tally?.metadata().orEmpty() + listOfNotNull((sessionName ?: title)?.let { TITLE_FIELD to it }),
             statistics = statistics.snapshot(),
         )
     }
 
+    private val scanMarkers: List<String> =
+        if (readsSessionInfoName) listOf("\"role\":\"user\"", "\"session_info\"") else listOf("\"role\":\"user\"")
+
     private companion object {
-        const val AGENT_ID = "omp"
-        const val SESSIONS_DIRECTORY = "sessions"
         const val JSONL_EXTENSION = "jsonl"
         const val MAX_SCAN_ENTRIES = 50_000
         const val MAX_HEADER_LINES = 8
@@ -104,10 +113,12 @@ class OmpProjectProvider(
         const val TYPE_FIELD = "type"
         const val SESSION_TYPE = "session"
         const val MESSAGE_TYPE = "message"
+        const val SESSION_INFO_TYPE = "session_info"
         const val ID_FIELD = "id"
         const val CWD_FIELD = "cwd"
         const val TIMESTAMP_FIELD = "timestamp"
         const val TITLE_FIELD = "title"
+        const val NAME_FIELD = "name"
         const val MESSAGE_FIELD = "message"
         const val ROLE_FIELD = "role"
         const val ATTRIBUTION_FIELD = "attribution"
@@ -116,7 +127,17 @@ class OmpProjectProvider(
         const val USER_ATTRIBUTION = "user"
         val HEADER_FIELDS = setOf(TYPE_FIELD, ID_FIELD, CWD_FIELD, TIMESTAMP_FIELD, TITLE_FIELD)
         val TYPE_ONLY = setOf(TYPE_FIELD)
-        val SCAN_MARKERS = listOf("\"role\":\"user\"")
-        val LOG: Logger = Logger.getLogger(OmpProjectProvider::class.java.name)
+        val NAME_ONLY = setOf(NAME_FIELD)
+        val LOG: Logger = Logger.getLogger(PiFamilyProjectProvider::class.java.name)
     }
 }
+
+/** Oh My Pi (`omp`): `<agent dir>/sessions`. */
+class OmpProjectProvider(
+    agentDirectory: Path = OmpHomeSupport.agentDirectory(AgentRuntime.userHome()),
+) : PiFamilyProjectProvider("omp", "Oh My Pi", agentDirectory.resolve("sessions"), readsSessionInfoName = false)
+
+/** Pi (`pi`): `~/.pi/agent/sessions`, relocatable with `PI_CODING_AGENT_DIR` / `PI_CODING_AGENT_SESSION_DIR`. */
+class PiProjectProvider(
+    sessionsDirectory: Path = PiHomeSupport.sessionsDirectory(AgentRuntime.userHome()),
+) : PiFamilyProjectProvider("pi", "Pi", sessionsDirectory, readsSessionInfoName = true)

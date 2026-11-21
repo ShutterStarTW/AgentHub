@@ -563,9 +563,27 @@ internal class EnvironmentPanel(
         ): Component {
             val presentIds = value as? Set<String> ?: emptySet()
             panel.removeAll()
-            agents.filter { it.id in presentIds }.forEach { agent ->
-                val icon = AgentHubUiComponents.faviconFor(agent.id) ?: return@forEach
+            val icons = agents.filter { it.id in presentIds }.mapNotNull { agent ->
+                AgentHubUiComponents.faviconFor(agent.id)?.let { agent to it }
+            }
+            // A FlowLayout wraps icons that do not fit onto further rows, which a fixed-height cell cannot show: keep
+            // one row and end it with "+N" for the agents that did not fit.
+            val columnWidth = table.columnModel.getColumn(column).width
+            val gap = JBUI.scale(ICON_GAP)
+            val padding = JBUI.scale(AgentHubUiComponents.ROW_TEXT_PADDING) * 2 + JBUI.scale(AgentHubUiComponents.SELECTION_HORIZONTAL_INSET)
+            val iconWidth = (icons.firstOrNull()?.second?.iconWidth ?: JBUI.scale(16)) + gap
+            val capacity = ((columnWidth - padding - gap) / iconWidth).coerceAtLeast(1)
+            val shown = if (icons.size <= capacity) icons else icons.take((capacity - 1).coerceAtLeast(0))
+            shown.forEach { (agent, icon) ->
                 panel.add(JLabel(icon).apply { toolTipText = agent.name; accessibleContext.accessibleName = agent.name })
+            }
+            if (shown.size < icons.size) {
+                val hidden = icons.drop(shown.size).joinToString(", ") { it.first.name }
+                panel.add(JLabel("+${icons.size - shown.size}").apply {
+                    foreground = JBColor.GRAY
+                    toolTipText = hidden
+                    accessibleContext.accessibleName = "and ${icons.size - shown.size} more agents: $hidden"
+                })
             }
             wrapper.background = table.background
             wrapper.selectionColor = AgentHubUiComponents.rowHighlight(isSelected, hover.isHovered(row))

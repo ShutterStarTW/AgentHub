@@ -47,6 +47,18 @@ class AgentCapabilityRegistryTest {
         assertFalse(AgentCapabilityRegistry.capabilitiesFor("kiro").supportsSharedAgentSkills)
         assertTrue(AgentCapabilityRegistry.capabilitiesFor("kiro").supportsMcp)
         assertTrue(AgentCapabilityRegistry.capabilitiesFor("qwen").supportsSkills)
+        // Pi reads the shared roots and has project MCP files; OpenClaw has workspace skills and no project MCP; Hermes reads
+        // `.agents/skills` only per project (the user-level one needs `skills.external_dirs`) and has no project MCP file.
+        val pi = AgentCapabilityRegistry.capabilitiesFor("pi")
+        assertTrue(pi.supportsSkills && pi.supportsSharedAgentSkills && pi.supportsMcp && pi.supportsProjectMcp)
+        assertTrue(pi.supportsInstructions && pi.supportsConfig)
+        val openclaw = AgentCapabilityRegistry.capabilitiesFor("openclaw")
+        assertTrue(openclaw.supportsSkills && openclaw.supportsSharedAgentSkills && openclaw.supportsMcp)
+        assertFalse(openclaw.supportsProjectMcp)
+        assertTrue(openclaw.supportsInstructions && openclaw.supportsConfig)
+        val hermes = AgentCapabilityRegistry.capabilitiesFor("hermes")
+        assertTrue(hermes.supportsSkills && hermes.supportsMcp && hermes.supportsInstructions && hermes.supportsConfig)
+        assertFalse(hermes.supportsSharedAgentSkills || hermes.supportsProjectMcp)
         assertFalse(AgentCapabilityRegistry.capabilitiesFor("unknown-agent").supportsSkills)
     }
 }

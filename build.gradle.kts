@@ -141,6 +141,14 @@ tasks {
         mainClass.set("com.shutterstar.agenthub.environment.mcp.discovery.McpDiscoverySmokeCliKt")
     }
 
+    register<JavaExec>("runUsageDiscovery") {
+        group = "verification"
+        description = "Run the read-only local usage limits discovery smoke CLI without printing sensitive data"
+        dependsOn("testClasses")
+        classpath = sourceSets["test"].runtimeClasspath
+        mainClass.set("com.shutterstar.agenthub.usage.discovery.UsageDiscoverySmokeCliKt")
+    }
+
     processResources {
         filesMatching("agenthub-version.properties") {
             expand("version" to project.version)

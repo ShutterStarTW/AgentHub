@@ -50,7 +50,10 @@ import com.shutterstar.agenthub.environment.skills.sync.target.KimiSkillSyncTarg
 import com.shutterstar.agenthub.environment.skills.sync.target.MimoSkillSyncTarget
 import com.shutterstar.agenthub.environment.skills.sync.target.VibeSkillSyncTarget
 import com.shutterstar.agenthub.environment.skills.sync.target.KiroSkillSyncTarget
+import com.shutterstar.agenthub.environment.skills.sync.target.HermesSkillSyncTarget
 import com.shutterstar.agenthub.environment.skills.sync.target.OmpSkillSyncTarget
+import com.shutterstar.agenthub.environment.skills.sync.target.OpenClawSkillSyncTarget
+import com.shutterstar.agenthub.environment.skills.sync.target.PiSkillSyncTarget
 import com.shutterstar.agenthub.environment.skills.sync.target.OpenCodeSkillSyncTarget
 import com.shutterstar.agenthub.environment.skills.sync.target.QwenSkillSyncTarget
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
@@ -672,13 +675,16 @@ internal class SkillSyncApplicationService(
                 CopilotSkillSyncTarget(),
                 CursorSkillSyncTarget(userHome),
                 GrokSkillSyncTarget(userHome),
+                HermesSkillSyncTarget(userHome),
                 JunieSkillSyncTarget(userHome),
                 KiloSkillSyncTarget(userHome),
                 KimiSkillSyncTarget(userHome),
                 KiroSkillSyncTarget(userHome),
                 MimoSkillSyncTarget(userHome),
                 OmpSkillSyncTarget(userHome),
+                OpenClawSkillSyncTarget(userHome),
                 OpenCodeSkillSyncTarget(userHome),
+                PiSkillSyncTarget(userHome),
                 QwenSkillSyncTarget(userHome),
                 VibeSkillSyncTarget(userHome),
             ).associateBy(SkillSyncTarget::agentId)

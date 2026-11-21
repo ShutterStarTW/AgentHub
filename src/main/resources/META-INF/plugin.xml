@@ -19,8 +19,8 @@
                 confirmation dialog.</li>
             <li><b>Detection</b> of installed agents on startup.</li>
             <li><b>Project discovery</b> &mdash; browse the projects and sessions of Antigravity,
-                Claude Code, Cline, Codex CLI, GitHub Copilot CLI, Cursor CLI, Freebuff, Grok Build, Junie CLI,
-                Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe, Oh My Pi, OpenCode and Qwen Code,
+                Claude Code, Cline, Codex CLI, GitHub Copilot CLI, Cursor CLI, Freebuff, Grok Build, Hermes Agent, Junie CLI,
+                Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe, Oh My Pi, OpenClaw, OpenCode, Pi and Qwen Code,
                 and resume a session from the tool window.</li>
             <li><b>Environment</b> &mdash; see the skills, MCP servers, instruction files and
                 configuration files each of those agents uses.</li>
@@ -45,13 +45,14 @@
         <p>
             The <b>AgentHub</b> tool window (right side of the IDE) shows the projects your coding agents
             have worked on, and the skills, MCP servers, instruction files and configuration files they
-            use. Everything is read from local files and nothing is uploaded. Discovery is read-only.
-            Skill files change only after you review a plan and confirm it.
+            use. Everything is read from local files. Discovery is read-only.
+            Skill files change only after you review a plan and confirm it. Nothing is uploaded; the
+            <b>Live quotas</b> setting of the Usage tab (on by default, can be turned off) is the only part that contacts an agent's provider.
         </p>
         <ul>
             <li><b>Projects and Agents</b> &mdash; sessions from Antigravity, Claude Code, Cline, Codex CLI,
-                GitHub Copilot CLI, Cursor CLI, Freebuff, Grok Build, Junie CLI, Kilo Code, Kimi Code, Kiro CLI, MiMo Code,
-                Mistral Vibe, Oh My Pi, OpenCode and Qwen Code, grouped by project or by agent. Sessions from several agents in the same repository appear as one project.</li>
+                GitHub Copilot CLI, Cursor CLI, Freebuff, Grok Build, Hermes Agent, Junie CLI, Kilo Code, Kimi Code, Kiro CLI, MiMo Code,
+                Mistral Vibe, Oh My Pi, OpenClaw, OpenCode, Pi and Qwen Code, grouped by project or by agent. Sessions from several agents in the same repository appear as one project.</li>
             <li><b>Sessions</b> &mdash; each session shows the agent's title (or your first prompt), how many
                 prompts you sent and when it ran. <b>Resume</b> reopens a session of any of these agents in its
                 own CLI in a terminal; <b>Transcript</b> opens the session file.</li>
@@ -61,6 +62,9 @@
                 different. MCP secrets are never shown, only variable names.</li>
             <li><b>Skills</b> &mdash; share a skill between agents, resolve conflicts, restore backups and undo.
                 Every change shows a plan first and backs up what it replaces.</li>
+            <li><b>Usage</b> &mdash; per agent, the limit windows with reset times and the tokens, prompts and
+                recorded cost measured locally from indexed sessions over 5 hours, 24 hours, 7 days and 30 days.
+                <b>Live quotas</b> (on by default) adds the account limits from the agent's CLI or provider.</li>
             <li><b>Installed agents only</b> &mdash; only agents whose CLI the latest detection found are shown, even before their first session.</li>
             <li><b>Open in IDE and Launch</b> &mdash; open a project in a detected JetBrains IDE, or start an
                 agent with the project directory as its working directory.</li>
@@ -133,6 +137,15 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>1.3.9</b></p>
+        <ul>
+            <li>A new <b>Usage</b> tab shows each agent's limit windows with reset times and pace, saved resets, and the tokens, prompts and cost measured locally over 5 hours, 24 hours, 7 days and 30 days.</li>
+            <li>The <b>Live quotas</b> setting (on by default) reads the account limits from the agent's own usage command or, for Claude Code, Codex CLI, GitHub Copilot CLI, Cursor CLI and Grok Build, from the provider with the CLI's sign-in. Tokens stay in memory and are never saved.</li>
+            <li>The tool window discovers <b>three more agents</b>: <b>Hermes Agent</b>, <b>OpenClaw</b> and <b>Pi</b>. Their sessions are listed and resume in a terminal. Hermes sessions need the <code>sqlite3</code> command line on the <code>PATH</code>.</li>
+            <li>Their skills, MCP servers and instruction files are shown, and skills can be synced to them.</li>
+            <li><b>OpenClaw</b> installs with its Gateway service and uninstalls it first; without the service every launch failed with <code>ECONNREFUSED</code>.</li>
+            <li><b>OpenCode 2.3.1+</b> reads <code>CLAUDE.md</code> again; the instruction file is no longer hidden for those versions.</li>
+        </ul>
         <p><b>1.3.8</b></p>
         <ul>
             <li>Switching between the <b>Projects</b> and <b>Agents</b> tabs no longer takes seconds with many projects, and the tool window opens faster.</li>

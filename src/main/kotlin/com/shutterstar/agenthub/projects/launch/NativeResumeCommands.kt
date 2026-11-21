@@ -26,6 +26,12 @@ import com.shutterstar.agenthub.LaunchFlags
  * - Antigravity: `agy --conversation <id>` (id = conversation UUID in `~/.gemini/antigravity-cli`: the
  *   `conversations/<id>.db` file name, `conversation_summaries.db` and `cache/last_conversations.json`)
  *
+ * Verified against the installed CLIs' `--help` and the official docs on 2026-11-17:
+ * - Hermes Agent: `hermes --resume <id>` (`-r`: "Resume a previous session by ID or title"; restores the recorded cwd)
+ * - OpenClaw:      `openclaw resume <session key>` (`query`: "Session key, display name, or label"; AgentHub passes the exact
+ *   `agent:<agentId>:<name>` key, which wins over fuzzy matches)
+ * - Pi:            `pi --session <id>` ("Open a session by file path or full/partial ID")
+ *
  * Pure Kotlin (no IntelliJ imports) so the session list model can consult it and it can be unit
  * tested standalone.
  */
@@ -51,13 +57,16 @@ object NativeResumeCommands {
         "cursor" to Template("cursor-agent", idArgs = "--resume"),
         "freebuff" to Template("freebuff", idArgs = "--continue"),
         "grok" to Template("grok", idArgs = "--resume"),
+        "hermes" to Template("hermes", idArgs = "--resume"),
         "junie" to Template("junie", idArgs = "--resume --session-id="),
         "kilo" to Template("kilo", idArgs = "--session"),
         "kimi" to Template("kimi", idArgs = "--session"),
         "kiro" to Template("kiro-cli", subcommand = "chat", idArgs = "--resume-id"),
         "mimo" to Template("mimo", idArgs = "--session"),
         "omp" to Template("omp", idArgs = "--resume"),
+        "openclaw" to Template("openclaw", subcommand = "resume"),
         "opencode" to Template("opencode", idArgs = "--session"),
+        "pi" to Template("pi", idArgs = "--session"),
         "qwen" to Template("qwen", idArgs = "--resume"),
         "vibe" to Template("vibe", idArgs = "--resume"),
     )

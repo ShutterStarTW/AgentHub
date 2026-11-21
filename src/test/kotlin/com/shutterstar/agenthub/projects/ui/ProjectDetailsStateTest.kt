@@ -185,7 +185,7 @@ class ProjectDetailsStateTest {
         assertEquals(1, table.rowCount)
         val rect = table.getCellRect(0, 0, false)
         for (button in listOf(java.awt.event.MouseEvent.BUTTON2, java.awt.event.MouseEvent.BUTTON3)) {
-            val event = java.awt.event.MouseEvent(table, java.awt.event.MouseEvent.MOUSE_CLICKED, 0, 0, rect.x + 5, rect.y + 5, 2, false, button)
+            val event = java.awt.event.MouseEvent(table, java.awt.event.MouseEvent.MOUSE_CLICKED, 0, 0, rect.x + 5, rect.y + 5, 1, false, button)
             table.mouseListeners.forEach { it.mouseClicked(event) }
         }
         assertEquals(0, opened)
@@ -195,7 +195,7 @@ class ProjectDetailsStateTest {
         panel.dispose()
     }
 
-    @Test fun `should only open agent project rows on left double click`() = onEdt {
+    @Test fun `should only open agent project rows on a single left click`() = onEdt {
         var opened = 0
         val discovery = ProjectEnvironmentDiscoveryService(persist = { _, _ -> })
         val panel = AgentsPanel(
@@ -214,8 +214,11 @@ class ProjectDetailsStateTest {
             list.mouseListeners.forEach { it.mouseClicked(event) }
         }
         assertEquals(0, opened)
-        val event = java.awt.event.MouseEvent(list, java.awt.event.MouseEvent.MOUSE_CLICKED, 0, 0, rect.x + 5, rect.y + 5, 2, false, java.awt.event.MouseEvent.BUTTON1)
+        val event = java.awt.event.MouseEvent(list, java.awt.event.MouseEvent.MOUSE_CLICKED, 0, 0, rect.x + 5, rect.y + 5, 1, false, java.awt.event.MouseEvent.BUTTON1)
         list.mouseListeners.forEach { it.mouseClicked(event) }
+        assertEquals(1, opened)
+        val second = java.awt.event.MouseEvent(list, java.awt.event.MouseEvent.MOUSE_CLICKED, 0, 0, rect.x + 5, rect.y + 5, 2, false, java.awt.event.MouseEvent.BUTTON1)
+        list.mouseListeners.forEach { it.mouseClicked(second) }
         assertEquals(1, opened)
         panel.dispose()
     }

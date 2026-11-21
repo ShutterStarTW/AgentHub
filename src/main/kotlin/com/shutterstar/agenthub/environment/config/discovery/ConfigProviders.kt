@@ -1,8 +1,11 @@
 package com.shutterstar.agenthub.environment.config.discovery
 
 import com.shutterstar.agenthub.environment.discovery.EnvHomeDirectorySupport
+import com.shutterstar.agenthub.environment.discovery.HermesHomeSupport
 import com.shutterstar.agenthub.environment.discovery.MimoHomeSupport
 import com.shutterstar.agenthub.environment.discovery.OmpHomeSupport
+import com.shutterstar.agenthub.environment.discovery.OpenClawLayout
+import com.shutterstar.agenthub.environment.discovery.PiHomeSupport
 import java.nio.file.Path
 import com.shutterstar.agenthub.OsDetector
 import com.shutterstar.agenthub.AgentRuntime
@@ -98,6 +101,30 @@ class OmpConfigProvider(homeDirectory: Path = home()) : FileConfigProvider(
     "omp",
     OmpHomeSupport.agentDirectory(homeDirectory).let { directory -> listOf("config.yml", "config.yaml").map(directory::resolve) },
     listOf(".omp/config.yml", ".omp/config.yaml"),
+)
+
+/** Pi: `settings.json` of the agent directory and of the project's `.pi/`. `auth.json`, `trust.json` and `mcp-auth.json` hold credentials and are not inventoried. */
+class PiConfigProvider(homeDirectory: Path = home()) : FileConfigProvider(
+    "pi",
+    listOf(PiHomeSupport.agentDirectory(homeDirectory).resolve("settings.json")),
+    listOf(".pi/settings.json"),
+)
+
+/** Hermes Agent: `config.yaml` of the Hermes home (inventory only, YAML). `.env` and `auth.json` hold secrets and are not inventoried. */
+class HermesConfigProvider(
+    homeDirectory: Path = home(),
+    windowsRuntime: Boolean = AgentRuntime.isWindowsRuntime(),
+) : FileConfigProvider(
+    "hermes",
+    listOf(HermesHomeSupport.homeDirectory(homeDirectory, windowsRuntime).resolve("config.yaml")),
+    emptyList(),
+)
+
+/** OpenClaw: the configuration file `openclaw.json` (inventory only; the `.bak`/`.last-good` copies are not listed). */
+class OpenClawConfigProvider(homeDirectory: Path = home()) : FileConfigProvider(
+    "openclaw",
+    listOf(OpenClawLayout(homeDirectory).configPath),
+    emptyList(),
 )
 
 /** CLI state file is mixed settings/credentials; highlights remain strictly allowlisted. */

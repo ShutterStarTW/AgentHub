@@ -19,12 +19,15 @@ internal data class JsonBoolean(val value: Boolean) : JsonValue
 internal data object JsonScalar : JsonValue
 
 internal object SafeJsonParser {
+    // Windows editors save UTF-8 with a BOM; the agent CLIs load such files, so the parser must too.
+    private const val BYTE_ORDER_MARK = "\uFEFF"
+
     fun parse(content: String): JsonValue? = runCatching {
-        Parser(content).parse()
+        Parser(content.removePrefix(BYTE_ORDER_MARK)).parse()
     }.getOrNull()
 
     fun parseJsonc(content: String): JsonValue? = runCatching {
-        Parser(JsoncSanitizer.sanitize(content)).parse()
+        Parser(JsoncSanitizer.sanitize(content.removePrefix(BYTE_ORDER_MARK))).parse()
     }.getOrNull()
 
     private class Parser(

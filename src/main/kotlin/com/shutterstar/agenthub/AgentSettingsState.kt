@@ -28,6 +28,10 @@ class AgentSettingsState : PersistentStateComponent<AgentSettingsState.State> {
         var showDeletedProjects: Boolean = true,
         /** Sessions with no recorded prompt and no name stay in the lists unless this is turned off. */
         var showEmptySessions: Boolean = true,
+        /** Live quota queries in the Usage tab (on by default; the user can turn them off). */
+        var usageLiveQueriesEnabled: Boolean = true,
+        /** The Usage tab lists only agents that have a real limit window (or need a sign-in) when this is on. */
+        var usageOnlyWithLimits: Boolean = true,
         var defaultsApplied: Boolean = false,
         var activeCompanionIds: MutableList<String> = mutableListOf(),
         var useWsl: Boolean = false,
@@ -286,6 +290,27 @@ class AgentSettingsState : PersistentStateComponent<AgentSettingsState.State> {
     private val detectionListeners = CopyOnWriteArrayList<() -> Unit>()
 
     private val projectViewListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    private val usageSettingsListeners = CopyOnWriteArrayList<() -> Unit>()
+
+    val usageLiveQueriesEnabled: Boolean get() = state.usageLiveQueriesEnabled
+
+    fun setUsageLiveQueriesEnabled(value: Boolean) {
+        if (state.usageLiveQueriesEnabled == value) return
+        state.usageLiveQueriesEnabled = value
+        usageSettingsListeners.forEach { it() }
+    }
+
+    val usageOnlyWithLimits: Boolean get() = state.usageOnlyWithLimits
+
+    fun setUsageOnlyWithLimits(value: Boolean) {
+        state.usageOnlyWithLimits = value
+    }
+
+    fun addUsageSettingsListener(listener: () -> Unit): AutoCloseable {
+        usageSettingsListeners += listener
+        return AutoCloseable { usageSettingsListeners -= listener }
+    }
 
     val showDeletedProjects: Boolean get() = state.showDeletedProjects
 

@@ -38,6 +38,18 @@ class SkillSyncAuditStateMapperTest {
     }
 
     @Test
+    fun `entries recorded in the same millisecond come back newest first`() {
+        val at = Instant.parse("2026-09-02T10:00:00Z")
+        fun entry(id: String, action: SyncAction) = SyncAuditEntry(id, at, "skill-1", action, setOf("claude"), SyncOperationStatus.SUCCESS, null)
+
+        val state = listOf(entry("op-1", SyncAction.PROMOTE), entry("op-2", SyncAction.SHARE_EVERYWHERE))
+            .fold(SkillSyncAuditState()) { acc, e -> SkillSyncAuditStateMapper.withRecorded(acc, e) }
+
+        assertEquals(listOf("op-2", "op-1"), SkillSyncAuditStateMapper.entriesFor(state, "skill-1").map { it.operationId })
+        assertEquals(listOf("op-2", "op-1"), SkillSyncAuditStateMapper.recentEntries(state, 10).map { it.operationId })
+    }
+
+    @Test
     fun `entriesFor(key) still matches after the persisted contextPath comes back denormalized`() {
         // Reproduces what a real IDE restart does on Windows: the persisted contextPath round
         // trips through IntelliJ's $USER_HOME$-style macro collapse/expand, which reconstructs the

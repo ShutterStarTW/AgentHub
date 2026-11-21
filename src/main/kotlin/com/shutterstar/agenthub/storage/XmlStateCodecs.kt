@@ -20,6 +20,11 @@ import com.shutterstar.agenthub.projects.persistence.ProjectIndexAgentState
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexProjectState
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexSessionState
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexState
+import com.shutterstar.agenthub.usage.persistence.LocalUsageBucketState
+import com.shutterstar.agenthub.usage.persistence.LocalUsageSummaryState
+import com.shutterstar.agenthub.usage.persistence.UsageCacheState
+import com.shutterstar.agenthub.usage.persistence.UsageSnapshotState
+import com.shutterstar.agenthub.usage.persistence.UsageWindowState
 import org.jdom.Element
 
 /**
@@ -34,6 +39,7 @@ internal object XmlStateCodecs {
         is SkillOwnershipState -> encodeSkillOwnershipState(state)
         is SkillSyncAuditState -> encodeSkillSyncAuditState(state)
         is SkillSyncSettingsState -> encodeSkillSyncSettingsState(state)
+        is UsageCacheState -> encodeUsageCacheState(state)
         else -> XmlSerializer.serialize(state)
     }
 
@@ -44,6 +50,7 @@ internal object XmlStateCodecs {
         SkillOwnershipState::class.java -> decodeSkillOwnershipState(element) as S
         SkillSyncAuditState::class.java -> decodeSkillSyncAuditState(element) as S
         SkillSyncSettingsState::class.java -> decodeSkillSyncSettingsState(element) as S
+        UsageCacheState::class.java -> decodeUsageCacheState(element) as S
         else -> XmlSerializer.deserialize(element, stateClass)
     }
 
@@ -622,6 +629,174 @@ internal object XmlStateCodecs {
 
     private fun Element.booleanValue(): Boolean? =
         stringValue()?.toBooleanStrict()
+
+    private fun Element.doubleValue(): Double? =
+        stringValue()?.toDoubleOrNull()
+
+    private fun Element.addNullableDoubleOption(name: String, value: Double?) {
+        if (value == null) return
+        addContent(Element("option").setAttribute("name", name).setAttribute("value", value.toString()))
+    }
+
+    private fun Element.addNullableIntOption(name: String, value: Int?) {
+        if (value == null) return
+        addContent(Element("option").setAttribute("name", name).setAttribute("value", value.toString()))
+    }
+
+    private fun Element.addNullableLongOption(name: String, value: Long?) {
+        if (value == null) return
+        addContent(Element("option").setAttribute("name", name).setAttribute("value", value.toString()))
+    }
+
+    // --- UsageCacheState ---------------------------------------------------------------------
+
+    private fun encodeUsageCacheState(state: UsageCacheState): Element =
+        Element("UsageCacheState").apply {
+            addIntOption("schemaVersion", state.schemaVersion, UsageCacheState.CURRENT_SCHEMA_VERSION)
+            addLongOption("refreshedAtEpochMillis", state.refreshedAtEpochMillis, 0L)
+            addBeanListOption("snapshots", state.snapshots, ::encodeUsageSnapshotState)
+        }
+
+    private fun decodeUsageCacheState(element: Element): UsageCacheState {
+        val state = UsageCacheState()
+        for (option in element.children) {
+            if (option.name != "option") continue
+            when (option.getAttributeValue("name")) {
+                "schemaVersion" -> option.intValue()?.let { state.schemaVersion = it }
+                "refreshedAtEpochMillis" -> option.longValue()?.let { state.refreshedAtEpochMillis = it }
+                "snapshots" -> state.snapshots = readBeanList(option, "UsageSnapshotState", ::decodeUsageSnapshotState)
+            }
+        }
+        return state
+    }
+
+    private fun encodeUsageSnapshotState(snapshot: UsageSnapshotState): Element =
+        Element("UsageSnapshotState").apply {
+            addStringOption("agentId", snapshot.agentId, "")
+            addStringOption("status", snapshot.status, "")
+            addStringOption("sourceKind", snapshot.sourceKind, "")
+            addStringOption("planLabel", snapshot.planLabel, null)
+            addNullableLongOption("observedAtEpochMillis", snapshot.observedAtEpochMillis)
+            addBeanListOption("windows", snapshot.windows, ::encodeUsageWindowState)
+            snapshot.localSummary?.let {
+                addContent(Element("option").setAttribute("name", "localSummary").addContent(encodeLocalUsageSummaryState(it)))
+            }
+            addStringOption("statusNote", snapshot.statusNote, null)
+            addStringOption("billingUrl", snapshot.billingUrl, null)
+        }
+
+    private fun decodeUsageSnapshotState(element: Element): UsageSnapshotState {
+        val state = UsageSnapshotState()
+        for (option in element.children) {
+            if (option.name != "option") continue
+            when (option.getAttributeValue("name")) {
+                "agentId" -> option.stringValue()?.let { state.agentId = it }
+                "status" -> option.stringValue()?.let { state.status = it }
+                "sourceKind" -> option.stringValue()?.let { state.sourceKind = it }
+                "planLabel" -> state.planLabel = option.stringValue()
+                "observedAtEpochMillis" -> state.observedAtEpochMillis = option.longValue()
+                "windows" -> state.windows = readBeanList(option, "UsageWindowState", ::decodeUsageWindowState)
+                "localSummary" -> option.getChild("LocalUsageSummaryState")?.let {
+                    state.localSummary = decodeLocalUsageSummaryState(it)
+                }
+                "statusNote" -> state.statusNote = option.stringValue()
+                "billingUrl" -> state.billingUrl = option.stringValue()
+            }
+        }
+        return state
+    }
+
+    private fun encodeUsageWindowState(window: UsageWindowState): Element =
+        Element("UsageWindowState").apply {
+            addStringOption("id", window.id, "")
+            addStringOption("label", window.label, "")
+            addStringOption("kind", window.kind, "")
+            addNullableDoubleOption("usedPercent", window.usedPercent)
+            addNullableDoubleOption("usedAmount", window.usedAmount)
+            addNullableDoubleOption("limitAmount", window.limitAmount)
+            addStringOption("unit", window.unit, null)
+            addNullableIntOption("windowMinutes", window.windowMinutes)
+            addNullableLongOption("resetsAtEpochMillis", window.resetsAtEpochMillis)
+            addBooleanOption("unlimited", window.unlimited, false)
+        }
+
+    private fun decodeUsageWindowState(element: Element): UsageWindowState {
+        val state = UsageWindowState()
+        for (option in element.children) {
+            if (option.name != "option") continue
+            when (option.getAttributeValue("name")) {
+                "id" -> option.stringValue()?.let { state.id = it }
+                "label" -> option.stringValue()?.let { state.label = it }
+                "kind" -> option.stringValue()?.let { state.kind = it }
+                "usedPercent" -> state.usedPercent = option.doubleValue()
+                "usedAmount" -> state.usedAmount = option.doubleValue()
+                "limitAmount" -> state.limitAmount = option.doubleValue()
+                "unit" -> state.unit = option.stringValue()
+                "windowMinutes" -> state.windowMinutes = option.intValue()
+                "resetsAtEpochMillis" -> state.resetsAtEpochMillis = option.longValue()
+                "unlimited" -> option.booleanValue()?.let { state.unlimited = it }
+            }
+        }
+        return state
+    }
+
+    private fun encodeLocalUsageSummaryState(summary: LocalUsageSummaryState): Element =
+        Element("LocalUsageSummaryState").apply {
+            addContent(Element("option").setAttribute("name", "last5Hours").addContent(encodeLocalUsageBucketState(summary.last5Hours)))
+            addContent(Element("option").setAttribute("name", "last24Hours").addContent(encodeLocalUsageBucketState(summary.last24Hours)))
+            addContent(Element("option").setAttribute("name", "last7Days").addContent(encodeLocalUsageBucketState(summary.last7Days)))
+            addContent(Element("option").setAttribute("name", "last30Days").addContent(encodeLocalUsageBucketState(summary.last30Days)))
+            addNullableLongOption("lastActivityEpochMillis", summary.lastActivityEpochMillis)
+            addStringListOption("models", summary.models)
+        }
+
+    private fun decodeLocalUsageSummaryState(element: Element): LocalUsageSummaryState {
+        val state = LocalUsageSummaryState()
+        for (option in element.children) {
+            if (option.name != "option") continue
+            when (option.getAttributeValue("name")) {
+                "last5Hours" -> option.getChild("LocalUsageBucketState")?.let { state.last5Hours = decodeLocalUsageBucketState(it) }
+                "last24Hours" -> option.getChild("LocalUsageBucketState")?.let { state.last24Hours = decodeLocalUsageBucketState(it) }
+                "last7Days" -> option.getChild("LocalUsageBucketState")?.let { state.last7Days = decodeLocalUsageBucketState(it) }
+                "last30Days" -> option.getChild("LocalUsageBucketState")?.let { state.last30Days = decodeLocalUsageBucketState(it) }
+                "lastActivityEpochMillis" -> state.lastActivityEpochMillis = option.longValue()
+                "models" -> state.models = readStringList(option)
+            }
+        }
+        return state
+    }
+
+    private fun encodeLocalUsageBucketState(bucket: LocalUsageBucketState): Element =
+        Element("LocalUsageBucketState").apply {
+            addIntOption("sessions", bucket.sessions, 0)
+            addLongOption("prompts", bucket.prompts, 0L)
+            addLongOption("inputTokens", bucket.inputTokens, 0L)
+            addLongOption("cachedTokens", bucket.cachedTokens, 0L)
+            addLongOption("outputTokens", bucket.outputTokens, 0L)
+            addLongOption("totalTokens", bucket.totalTokens, 0L)
+            addLongOption("recordedCostTicks", bucket.recordedCostTicks, 0L)
+            addLongOption("premiumRequests", bucket.premiumRequests, 0L)
+            addLongOption("nanoAiu", bucket.nanoAiu, 0L)
+        }
+
+    private fun decodeLocalUsageBucketState(element: Element): LocalUsageBucketState {
+        val state = LocalUsageBucketState()
+        for (option in element.children) {
+            if (option.name != "option") continue
+            when (option.getAttributeValue("name")) {
+                "sessions" -> option.intValue()?.let { state.sessions = it }
+                "prompts" -> option.longValue()?.let { state.prompts = it }
+                "inputTokens" -> option.longValue()?.let { state.inputTokens = it }
+                "cachedTokens" -> option.longValue()?.let { state.cachedTokens = it }
+                "outputTokens" -> option.longValue()?.let { state.outputTokens = it }
+                "totalTokens" -> option.longValue()?.let { state.totalTokens = it }
+                "recordedCostTicks" -> option.longValue()?.let { state.recordedCostTicks = it }
+                "premiumRequests" -> option.longValue()?.let { state.premiumRequests = it }
+                "nanoAiu" -> option.longValue()?.let { state.nanoAiu = it }
+            }
+        }
+        return state
+    }
 
     private fun readStringList(option: Element): MutableList<String> {
         val container = option.getChild("list") ?: option

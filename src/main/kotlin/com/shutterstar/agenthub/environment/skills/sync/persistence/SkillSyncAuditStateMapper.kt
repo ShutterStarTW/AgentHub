@@ -8,26 +8,29 @@ import java.time.Instant
 import com.shutterstar.agenthub.environment.skills.model.SkillScope
 
 object SkillSyncAuditStateMapper {
+    // Timestamps are stored in milliseconds, so entries recorded together tie; the sort is stable, hence the reversal puts the later append first.
+    private fun List<SyncAuditEntry>.newestFirst(): List<SyncAuditEntry> = asReversed().sortedByDescending { it.timestamp }
+
     fun entriesFor(state: SkillSyncAuditState, skillId: String): List<SyncAuditEntry> {
         if (state.schemaVersion != SkillSyncAuditState.CURRENT_SCHEMA_VERSION) return emptyList()
         return state.entries
             .filter { it.skillId == skillId }
             .mapNotNull(::decodeEntry)
-            .sortedByDescending { it.timestamp }
+            .newestFirst()
     }
 
     fun entriesFor(state: SkillSyncAuditState, key: SkillInstanceKey): List<SyncAuditEntry> {
         if (state.schemaVersion != SkillSyncAuditState.CURRENT_SCHEMA_VERSION) return emptyList()
         return state.entries.mapNotNull(::decodeEntry)
             .filter { it.instanceKey == key }
-            .sortedByDescending { it.timestamp }
+            .newestFirst()
     }
 
     fun recentEntries(state: SkillSyncAuditState, limit: Int): List<SyncAuditEntry> {
         if (state.schemaVersion != SkillSyncAuditState.CURRENT_SCHEMA_VERSION) return emptyList()
         return state.entries
             .mapNotNull(::decodeEntry)
-            .sortedByDescending { it.timestamp }
+            .newestFirst()
             .take(limit)
     }
 

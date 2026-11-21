@@ -172,22 +172,44 @@ class InstructionDiscoveryServiceTest {
         Files.writeString(projectRoot.resolve("AGENTS.md"), "")
         Files.writeString(projectRoot.resolve("CLAUDE.md"), "Valid fallback")
 
-        val source = OpenCodeInstructionProvider(temporaryDirectory) { 1 }
+        val source = OpenCodeInstructionProvider(temporaryDirectory) { OpenCodeVersion(1, 19, 6) }
             .discoverProject(project(projectRoot)).single()
 
         assertEquals(InstructionType.CLAUDE_MD, source.type)
     }
 
     @Test
-    fun `should not attribute Claude fallback to OpenCode V2`() {
+    fun `should not attribute Claude fallback to OpenCode before 2_3_1`() {
         val projectRoot = projectRoot()
         Files.createDirectories(temporaryDirectory.resolve(".claude"))
         Files.writeString(temporaryDirectory.resolve(".claude/CLAUDE.md"), "Legacy global")
         Files.writeString(projectRoot.resolve("CLAUDE.md"), "Legacy project")
-        val provider = OpenCodeInstructionProvider(temporaryDirectory) { 2 }
+        val provider = OpenCodeInstructionProvider(temporaryDirectory) { OpenCodeVersion(2, 3, 0) }
 
         assertTrue(provider.discoverGlobal().isEmpty())
         assertTrue(provider.discoverProject(project(projectRoot)).isEmpty())
+    }
+
+    @Test
+    fun `should use Claude fallback again from OpenCode 2_3_1`() {
+        val projectRoot = projectRoot()
+        Files.createDirectories(temporaryDirectory.resolve(".claude"))
+        Files.writeString(temporaryDirectory.resolve(".claude/CLAUDE.md"), "Global")
+        Files.writeString(projectRoot.resolve("CLAUDE.md"), "Project")
+
+        listOf(OpenCodeVersion(2, 3, 1), OpenCodeVersion(2, 4, 0), OpenCodeVersion(3, 0, 0)).forEach { version ->
+            val provider = OpenCodeInstructionProvider(temporaryDirectory) { version }
+
+            assertEquals(InstructionType.CLAUDE_MD, provider.discoverGlobal().single().type)
+            assertEquals(InstructionType.CLAUDE_MD, provider.discoverProject(project(projectRoot)).single().type)
+        }
+    }
+
+    @Test
+    fun `should parse OpenCode version output`() {
+        assertEquals(OpenCodeVersion(2, 3, 1), OpenCodeVersion.parse("opencode 2.3.1"))
+        assertEquals(OpenCodeVersion(1, 19, 0), OpenCodeVersion.parse("1.19"))
+        assertEquals(null, OpenCodeVersion.parse("unknown"))
     }
 
     @Test

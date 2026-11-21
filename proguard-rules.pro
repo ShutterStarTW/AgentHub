@@ -23,6 +23,7 @@
 -keep class com.shutterstar.agenthub.AgentSettingsState$* { *; }
 -keep class com.shutterstar.agenthub.projects.persistence.** { *; }
 -keep class com.shutterstar.agenthub.environment.persistence.** { *; }
+-keep class com.shutterstar.agenthub.usage.persistence.** { *; }
 
 # The scoped -libraryjars (compileClasspath) doesn't include every transitive class of
 # the IDE/Terminal plugin, so ProGuard would otherwise warn about unresolved references.

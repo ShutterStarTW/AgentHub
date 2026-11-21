@@ -522,9 +522,11 @@ object CodingAgents {
             id = "openclaw",
             name = "OpenClaw",
             command = "openclaw",
-            installHint = "npm install -g openclaw",
+            // The CLI needs the Gateway service; without it every launch fails with ECONNREFUSED :18789.
+            installHint = "npm install -g openclaw && openclaw gateway install && openclaw gateway start",
             updateHint = "npm update --quiet --no-fund -g openclaw",
-            uninstallHint = "npm uninstall -g openclaw",
+            // Gateway first: `openclaw` is gone after the npm uninstall, and the login item would be orphaned.
+            uninstallHint = "openclaw gateway uninstall && npm uninstall -g openclaw",
             provider = "OpenClaw",
             url = "https://openclaw.ai",
             devUrl = "https://github.com/openclaw/openclaw",

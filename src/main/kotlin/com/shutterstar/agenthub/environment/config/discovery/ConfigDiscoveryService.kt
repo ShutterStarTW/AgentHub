@@ -48,9 +48,9 @@ class ConfigDiscoveryService(
         val defaultProviders = AgentRuntime.scoped<List<ConfigProvider>> {
             listOf(
                 AntigravityConfigProvider(), ClaudeConfigProvider(), ClineConfigProvider(), CodexConfigProvider(),
-                CopilotConfigProvider(), CursorConfigProvider(), FreebuffConfigProvider(), GrokConfigProvider(), JunieConfigProvider(),
+                CopilotConfigProvider(), CursorConfigProvider(), FreebuffConfigProvider(), GrokConfigProvider(), HermesConfigProvider(), JunieConfigProvider(),
                 KiloConfigProvider(), KimiConfigProvider(), KiroConfigProvider(), MimoConfigProvider(), OmpConfigProvider(),
-                OpenCodeConfigProvider(), QwenConfigProvider(), VibeConfigProvider(),
+                OpenClawConfigProvider(), OpenCodeConfigProvider(), PiConfigProvider(), QwenConfigProvider(), VibeConfigProvider(),
             )
         }
     }

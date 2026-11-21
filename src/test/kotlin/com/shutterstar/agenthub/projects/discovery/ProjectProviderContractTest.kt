@@ -177,6 +177,10 @@ class ProjectProviderContractTest {
                 val session = """{"id":${json(id)},"directory":${json(project.toString())},"time":{"created":${at.toEpochMilli()},"updated":${at.toEpochMilli()}}}"""
                 file(home.resolve("opencode-data/project/key$slot/storage/session/key$slot/$id.json"), session, at)
             },
+            fixture("pi", { PiProjectProvider(it.resolve(".pi/agent/sessions")) }, { it.resolve(".pi/agent/sessions") }) { home, id, project, at, slot ->
+                val line = """{"type":"session","version":3,"id":${json(id)},"timestamp":${json(at.toString())},"cwd":${json(project.toString())}}"""
+                file(home.resolve(".pi/agent/sessions/--key$slot--/${at.toEpochMilli()}_$id-$slot.jsonl"), line + "\n", at)
+            },
             fixture("qwen", { QwenProjectProvider(it.resolve(".qwen")) }, { it.resolve(".qwen/projects") }) { home, id, project, at, slot ->
                 val line = """{"sessionId":${json(id)},"cwd":${json(project.toString())},"timestamp":${json(at.toString())},"type":"system"}"""
                 file(home.resolve(".qwen/projects/key$slot/chats/$id-$slot.jsonl"), line + "\n", at)

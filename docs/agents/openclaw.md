@@ -3,14 +3,14 @@
 ## Installation
 
 ```shell
-# Install with npm
-npm install -g openclaw
+# Install with npm and set up the Gateway service
+npm install -g openclaw && openclaw gateway install && openclaw gateway start
 
 # Update to latest version
 npm update --quiet --no-fund -g openclaw
 
-# Uninstall
-npm uninstall -g openclaw
+# Uninstall (Gateway service first)
+openclaw gateway uninstall && npm uninstall -g openclaw
 ```
 
 > via [openclaw.ai](https://openclaw.ai) &middot; [github.com/openclaw/openclaw](https://github.com/openclaw/openclaw)

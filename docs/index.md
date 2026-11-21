@@ -34,20 +34,21 @@
 
 The **AgentHub** tool window (right side of the IDE) shows the projects your coding agents have worked
 on, and the skills, MCP servers, instruction files and configuration files they use. Everything is
-read from local files and nothing is uploaded. Discovery is read-only. Skill files change only after
-you review a plan and confirm it.
+read from local files. Discovery is read-only. Skill files change only after you review a plan and
+confirm it. Nothing is uploaded; the **Live quotas** setting of the Usage tab (on by default, can be turned off) is the only part
+that contacts an agent's provider (see [Usage limits](usage-limits.md)).
 
 ### Features
 
 - **Projects and Agents** — sessions from Antigravity, Claude Code, Cline, Codex CLI, GitHub Copilot
-  CLI, Cursor CLI, Freebuff, Grok Build, Junie CLI, Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe,
-  Oh My Pi, OpenCode and Qwen Code, grouped by
+  CLI, Cursor CLI, Freebuff, Grok Build, Hermes Agent, Junie CLI, Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe,
+  Oh My Pi, OpenClaw, OpenCode, Pi and Qwen Code, grouped by
   project or by agent.
   Sessions from several agents in the same repository appear as one project (local path and Git
   remote are matched).
 - **Sessions** — each session shows the agent's title (or your first prompt), how many prompts you
-  sent and when it ran. **Resume** reopens a session of Antigravity, Claude Code, Cline, Codex CLI, Copilot CLI, Cursor CLI, Freebuff, Grok Build, Junie CLI,
-  Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe, Oh My Pi, OpenCode or Qwen Code in a
+  sent and when it ran. **Resume** reopens a session of Antigravity, Claude Code, Cline, Codex CLI, Copilot CLI, Cursor CLI, Freebuff, Grok Build, Hermes Agent, Junie CLI,
+  Kilo Code, Kimi Code, Kiro CLI, MiMo Code, Mistral Vibe, Oh My Pi, OpenClaw, OpenCode, Pi or Qwen Code in a
   terminal; **Transcript** opens the session file. See [session statistics](session-statistics.md) for the per-session usage details.
   Sessions whose file was deleted stay listed from Codex's state database or Claude's `history.jsonl`;
   **Show deleted projects** and **Show empty sessions** in Settings > Behavior hide the rest.
@@ -56,6 +57,9 @@ you review a plan and confirm it.
   exist under several agents are marked as identical or different. MCP secrets are never shown,
   only variable names. See the [environment discovery paths](environment-paths.md).
 - **Skills** — share a skill between agents, resolve conflicts, restore backups and undo. See [the Skills page](skills.md).
+- **Usage** — per agent, the limit windows with reset times and the tokens, prompts and recorded cost
+  measured locally from indexed sessions over 5 hours, 24 hours, 7 days and 30 days. **Live quotas**
+  (on by default) adds the account limits from the agent's CLI or provider. See [Usage limits](usage-limits.md).
 - **Installed agents only** — only agents whose CLI the latest detection found are shown. Detection
   runs on every IDE start and after Detect, Settings install/remove and WSL switches. If you
   reinstall an agent, its data still on disk reappears. An installed agent that has no session yet is
@@ -70,9 +74,11 @@ you review a plan and confirm it.
 
 - **Projects** lists repositories by recent activity. Select one to see its path, Git remote,
   per-agent activity, sessions and environment.
-- **Agents** lists each discovered agent with its projects. Double-click a project (or press
+- **Agents** lists each discovered agent with its projects. Click a project (or press
   **Enter**) to open it on the Projects tab.
 - **Skills** lists global or project skills. One **Filters** popup narrows the list.
+- **Usage** lists each installed agent with its highest limit usage. Sort by highest usage, name or
+  recent activity.
 - The search box under the tabs filters the selected tab. In a narrow window the details replace the
   list, and a back button returns to it.
 - Row menus (right-click or **Shift+F10**) offer Open, Reveal in Files and Copy Path. With a session
@@ -120,7 +126,7 @@ folders, with backups and rollback.
 | [Mistral Vibe](https://mistral.ai/products/vibe)                               | `vibe`       | Mistral AI  | `pip install mistral-vibe`                                                      |
 | [Muse Code](https://dev.meta.ai/products/muse-code)                 | `muse`       | Meta        | `curl -fsSL https://dev.meta.ai/install.sh \| bash`                             |
 | [Oh My Pi](https://omp.sh)                                                     | `omp`        | can1357     | `npm install -g @oh-my-pi/pi-coding-agent`                                      |
-| [OpenClaw](https://openclaw.ai)                                                | `openclaw`   | OpenClaw    | `npm install -g openclaw`                                                       |
+| [OpenClaw](https://openclaw.ai)                                                | `openclaw`   | OpenClaw    | `npm install -g openclaw && openclaw gateway install && openclaw gateway start` |
 | [OpenCode](https://opencode.ai)                                                | `opencode`   | SST         | `npm install -g @opencode/cli`                                                  |
 | [OpenHands](https://www.openhands.dev/)                                            | `openhands`  | All Hands   | `pip install openhands-ai`                                                      |
 | [Pi](https://pi.dev)                                                           | `pi`         | Mario Zechner | `npm install -g @earendil-works/pi-coding-agent`                                |
@@ -228,3 +234,19 @@ Go to **Settings/Preferences > Tools > AgentHub** to:
 Agent and project **Environment** views also include **Config**: a read-only inventory of documented
 agent settings files, safe model/mode/count highlights, Open / Reveal / Copy Path, and warnings for
 configured approval bypass or unrestricted sandbox modes. See [Environment paths](environment-paths.md#config-inventory-2026-09-30).
+
+## AgentHub and JetBrains Air
+
+JetBrains Air is an agentic workspace that is bundled with JetBrains IDEs from 2026.3 and available as a plugin for 2026.2. AgentHub takes a different approach: it starts each agent's own CLI in an IDE terminal tab and shows what the agents have left on your machine.
+
+| | AgentHub | Air |
+|---|---|---|
+| Agent interface | The agent's own CLI in an IDE terminal tab | Structured chat or the agent's terminal |
+| Agents | 40+ built-in CLI agents and a custom agent | Installed agents it detects, plus the ACP registry |
+| Parallel work | One terminal tab per agent | Parallel sessions across projects, one Git worktree per agent |
+| Across agents | Projects, sessions, skills, MCP servers, instruction files and configuration per agent, read-only | Sessions across projects in one view |
+| Skills | Skill sync between agents after you review and confirm a plan | Not covered here |
+| Accounts | Each CLI keeps its own login | Reuses the agent's authorization or provider; no JetBrains AI subscription needed |
+| IDE versions | 2024.1 and newer | 2026.2 and newer |
+
+Air is separate from JetBrains AI Assistant and does not replace it.

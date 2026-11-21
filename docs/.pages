@@ -2,6 +2,7 @@ nav:
   - index.md
   - agents
   - skills.md
+  - usage-limits.md
   - companion-tools.md
   - wsl-mode.md
   - environment-paths.md

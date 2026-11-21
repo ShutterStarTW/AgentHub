@@ -66,6 +66,14 @@ object AgentCapabilityRegistry {
             supportsInstructions = true,
             supportsConfig = true,
         ),
+        "hermes" to AgentCapabilities(
+            supportsSkills = true,
+            supportsSharedAgentSkills = false,
+            supportsMcp = true,
+            supportsProjectMcp = false,
+            supportsInstructions = true,
+            supportsConfig = true,
+        ),
         "junie" to AgentCapabilities(
             supportsSkills = true,
             supportsSharedAgentSkills = true,
@@ -114,7 +122,23 @@ object AgentCapabilityRegistry {
             supportsInstructions = true,
             supportsConfig = true,
         ),
+        "openclaw" to AgentCapabilities(
+            supportsSkills = true,
+            supportsSharedAgentSkills = true,
+            supportsMcp = true,
+            supportsProjectMcp = false,
+            supportsInstructions = true,
+            supportsConfig = true,
+        ),
         "opencode" to AgentCapabilities(
+            supportsSkills = true,
+            supportsSharedAgentSkills = true,
+            supportsMcp = true,
+            supportsProjectMcp = true,
+            supportsInstructions = true,
+            supportsConfig = true,
+        ),
+        "pi" to AgentCapabilities(
             supportsSkills = true,
             supportsSharedAgentSkills = true,
             supportsMcp = true,

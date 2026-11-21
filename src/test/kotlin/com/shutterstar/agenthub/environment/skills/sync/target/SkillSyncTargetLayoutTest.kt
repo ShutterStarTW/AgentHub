@@ -139,6 +139,11 @@ class SkillSyncTargetLayoutTest {
                 alternateProject = listOf(".claude/skills", ".codex/skills"),
                 create = ::OmpSkillSyncTarget,
             ),
+            Layout("pi", ".pi/agent/skills", ".pi/skills", create = ::PiSkillSyncTarget),
+            Layout(
+                "hermes", ".hermes/skills", ".hermes/skills",
+                create = { home -> HermesSkillSyncTarget(home, windowsRuntime = false) },
+            ),
             Layout(
                 "opencode", ".config/opencode/skills", ".opencode/skills",
                 alternateGlobal = listOf(".claude/skills", ".opencode/skills", ".config/opencode/skill", ".opencode/skill"),

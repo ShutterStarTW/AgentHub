@@ -1,5 +1,5 @@
 # Pushing a version tag (vX.Y.Z) builds and tests the plugin and publishes a GitHub Release with the ZIP attached.
-# The release text is the matching `- `X.Y.Z`: ...` line of CHANGES.md. Uploading the ZIP to the
+# The release text is the matching `## X.Y.Z` section of docs/changelog.md. Uploading the ZIP to the
 # JetBrains Marketplace stays a manual step.
 name: Release
 
@@ -21,8 +21,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # The tag, VERSION.md (which build.gradle.kts reads) and CHANGES.md must agree, or the ZIP and its notes would not match.
-      - name: Check the tag against VERSION.md and CHANGES.md
+      # The tag, VERSION.md (which build.gradle.kts reads) and docs/changelog.md must agree, or the ZIP and its notes would not match.
+      - name: Check the tag against VERSION.md and docs/changelog.md
         run: |
           version="${GITHUB_REF_NAME#v}"
           expected="$(tr -d '[:space:]' < VERSION.md)"
@@ -30,12 +30,16 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match VERSION.md ($expected)"
             exit 1
           fi
-          notes="$(grep -m1 "^- \`${version}\`: " CHANGES.md | sed -E 's/^- `[^`]+`: //')"
-          if [ -z "$notes" ]; then
-            echo "::error::CHANGES.md has no '- \`${version}\`: ...' entry"
+          # The body of the `## X.Y.Z` section (date line and bullets), up to the next `## ` heading, without surrounding blank lines.
+          awk -v heading="## ${version}" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' docs/changelog.md | sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | sed '/./,$!d' > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::docs/changelog.md has no '## ${version}' section with content"
             exit 1
           fi
-          printf '%s\n' "$notes" > release-notes.md
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.9
+
+*2026-11-21*
+
+- A new **Usage** tab shows each agent's limit windows with reset times and pace, saved resets, and the tokens, prompts and cost measured locally over 5 hours, 24 hours, 7 days and 30 days. See [Usage limits](usage-limits.md).
+- The **Live quotas** setting (on by default) reads the account limits from the agent's own usage command or, for Claude Code, Codex CLI, GitHub Copilot CLI, Cursor CLI and Grok Build, from the provider with the CLI's sign-in. Tokens stay in memory and are never saved.
+- The AgentHub tool window discovers **three more agents**: Hermes Agent, OpenClaw and Pi. Their sessions are listed and resume in a terminal. Hermes sessions need the `sqlite3` command line on the `PATH`.
+- Their skills, MCP servers and instruction files are shown, and skills can be synced to them.
+- **OpenClaw** installs with its Gateway service and uninstalls it first; without the service every launch failed with `ECONNREFUSED`.
+- **OpenCode 2.3.1+** reads `CLAUDE.md` again; the instruction file is no longer hidden for those versions.
+
 ## 1.3.8
 
 *2026-11-16*

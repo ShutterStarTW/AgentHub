@@ -3,7 +3,7 @@
 This page lists the paths **AgentHub currently scans** for skills, instruction files, MCP
 servers and sessions, and the config files it inventories (table at the end). It describes AgentHub's
 implementation, which may cover a different set of sources than the agent CLI itself. It covers all
-seventeen agents the tool window knows.
+twenty agents the tool window knows.
 
 `~` means the operating system user's home directory. `<project>` means the resolved local
 project root. `**` means AgentHub also scans matching nested directories, subject to the scan
@@ -19,7 +19,7 @@ Windows side. See [WSL mode](wsl-mode.md).
 ## Shared skill location
 
 AgentHub scans `~/.agents/skills/` and `<project>/**/.agents/skills/` once and associates those
-skills with every agent that reads that folder itself: all of them except Claude Code and Kiro CLI.
+skills with every agent that reads that folder itself: all of them except Claude Code, Hermes Agent and Kiro CLI.
 Cline and Qwen Code were added after checking their sources (Cline's skill directory list and Qwen's
 `SKILL_PROVIDER_CONFIG_DIRS = ['.qwen', '.agents']`). Copilot CLI stops reading `~/.agents/skills`
 when `COPILOT_HOME` is set (changelog 1.0.66), which AgentHub does not model. The sections below omit
@@ -178,6 +178,38 @@ The config directory is `~/.config/manicode`, or `FREEBUFF_CONFIG_DIR` (an absol
   `<project>/.mcp.json`, `<project>/.cursor/mcp.json`, and matching Claude project entries.
 - **Sessions:** `$GROK_HOME/sessions/<percent-encoded cwd>/<session id>/` (default `~/.grok/`) with `summary.json`,
   `chat_history.jsonl` and `updates.jsonl`.
+
+## Hermes Agent (`hermes`)
+
+Sources: the [Hermes Agent docs](https://hermes-agent.nousresearch.com/docs) — `developer-guide/session-storage`,
+`reference/cli-commands`, `reference/environment-variables` — and the installed `hermes_state_common.py` (`SCHEMA_VERSION` 33,
+v0.23.2) and the `features/skills`, `features/mcp`, `features/context-files`, `user-guide/configuration` pages.
+Checked 2026-11-17.
+
+The home directory is `HERMES_HOME`, else `%LOCALAPPDATA%\hermes` on Windows and `~/.hermes` on macOS/Linux and in WSL mode.
+A named profile keeps its own database in `<home>/profiles/<name>/state.db`.
+
+- **Sessions:** the `sessions` table of `<home>/state.db` (read-only, through the `sqlite3` command line; WAL files are
+  never touched). The project is `cwd`, else `git_repo_root`; a session with neither (gateway chats from messaging
+  platforms) is skipped. Title: `title`; times: `started_at` and `last_activity_at` (else `ended_at`), in seconds;
+  `archived = 1` marks an archived session. A typed prompt is a `messages` row with `role = 'user'` that is not an
+  observed group-chat line (`observed`), not a compaction summary (`_compressed_summary`) and not harness scaffolding
+  (`display_kind` `hidden` or `async_delegation_complete`). Structured content (reserved `\0json:` prefix) is read only
+  when it holds plain text. Resume: `hermes --resume <id>` (restores the recorded working directory).
+- Not modelled: token and cost columns and the lineage (`parent_session_id`) of compressed sessions.
+- **Skills:** `<home>/skills/` (category folders with `SKILL.md`; bundled, hub-installed and agent-created skills share it;
+  dot folders such as `.hub` are skipped) and per project `.hermes/skills` (Hermes loads it only after `hermes skills trust`).
+  `.agents/skills` is the shared provider's - Hermes reads the project one, the user-level one only through
+  `skills.external_dirs`, so Hermes is not marked as a shared-skills reader. Not modelled: `skills.external_dirs`,
+  `skills.create_dir`, skill bundles, plugin skills.
+- **MCP:** the `mcp_servers` mapping of `<home>/config.yaml` (`command`, `args`, `env`, `url`, `headers`, `transport: sse`;
+  `enabled: false` servers are skipped). Only environment-variable names are kept. A small YAML reader limited to this
+  mapping handles block and flow forms; anchors and multi-line scalars are opaque. No project-level MCP file is documented.
+- **Instructions:** global `<home>/SOUL.md`. Project: Hermes loads **one** context type, the first existing of
+  `.hermes.md`/`HERMES.md`, `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules` (with the `.mdc` files of
+  `.cursor/rules`); a lower-priority file next to a higher one is listed with a note. Nested `AGENTS.md`/`CLAUDE.md`
+  are listed too (discovered progressively). `memories/` is agent memory and not read.
+- **Config:** `<home>/config.yaml` - inventory only; `.env` and `auth.json` are not inventoried.
 
 ## Junie CLI (`junie`)
 
@@ -357,6 +389,37 @@ whole agent directory for the default profile, and a named profile (`OMP_PROFILE
   root `mcp.json` / `.mcp.json`. Servers OMP imports from other tools belong to those tools' providers.
 - **Config:** `config.yml` / `config.yaml` in the agent directory and the project's `.omp/config.yml` — inventory only (YAML).
 
+## OpenClaw (`openclaw`)
+
+Sources: the [OpenClaw docs](https://docs.openclaw.ai) — `reference/database-schemas/layout`,
+`concepts/agent-workspace`, `concepts/session`, `cli/resume`, `tools/skills`, `tools/mcp`, `gateway/configuration` — and
+`openclaw --help` (2026.11.5). Checked 2026-11-17.
+
+The state directory is `OPENCLAW_STATE_DIR`, else `~/.openclaw-<profile>` for `OPENCLAW_PROFILE`, else `~/.openclaw`.
+The configuration is `<state>/openclaw.json` (`OPENCLAW_CONFIG_PATH`). The `--profile` flag cannot be observed.
+
+- **Sessions:** the `session_nodes` rows of `<state>/agents/<agentId>/agent/openclaw-agent.sqlite` (read-only, through the
+  `sqlite3` command line). An OpenClaw session has no working directory, so every `agent:` key (cron and webhook keys are
+  not conversations) is listed in the **workspace** of its agent: `agents.entries.<id>.workspace`; without it the sole
+  agent and `main` use `agents.defaults.workspace`, else `OPENCLAW_WORKSPACE_DIR`, else `<state>/workspace`, and the other
+  agents of a roster `<agents.defaults.workspace>/<id>` or `<state>/workspace-<id>`. The session id is the session key
+  (stable across resets); title: `display_name`, else `label`; times: `session_started_at` and `last_activity_at`
+  (milliseconds). The prompts are the `transcript_events` of the current session id with `message_role = 'user'` and
+  `provenance.kind = external_user` (or no provenance); an event stored compressed (`event_zstd`) is counted but has no
+  text. Resume: `openclaw resume <session key>`.
+- Not modelled: earlier windows of a session after a daily reset, channel and sender details, the legacy `sessions.json`.
+- **Skills:** global `<state>/skills` (managed) and `<state>/agents/<id>/agent/workshop-skills`; project (the agent
+  workspace) `<workspace>/skills`. `~/.agents/skills` and `<workspace>/.agents/skills` are the shared provider's. Bundled and
+  plugin skills and `skills.load.extraDirs` are not modelled. Skills are not offered as symlinks (OpenClaw follows links
+  only from `skills.load.allowSymlinkTargets`).
+- **MCP:** the `mcp.servers` map of `openclaw.json` (JSON5: comments and trailing commas are accepted; `command` or `url`,
+  `transport`, a bare `url` means SSE, `enabled: false` servers are skipped). Only environment-variable names are kept.
+  mcporter servers and project-level files do not exist / are not modelled.
+- **Instructions:** the bootstrap files at the root of an agent workspace: `AGENTS.md`, `SOUL.md`, `USER.md`,
+  `IDENTITY.md`, `MEMORY.md` (main private session only), `BOOT.md` (only with the `boot-md` hook), `BOOTSTRAP.md` (first
+  run, then deleted). `HEARTBEAT.md` is not read by the runtime and `memory/` is agent memory, so neither is listed.
+- **Config:** `openclaw.json` - inventory only; the `.bak`, `.last-good` and `.rejected` copies are not listed.
+
 ## OpenCode
 
 - **Sessions:** read-only SQLite under `$XDG_DATA_HOME/opencode/` (default
@@ -375,11 +438,12 @@ whole agent directory for the default profile, and a named profile (`OMP_PROFILE
   `skill/` folder is accepted next to `skills/` in each config directory. Project nested `**/{.opencode,.claude}/skills/`
   and `<project>/.opencode/skill/`. (OpenCode finds the project directories by walking *up* from the working directory
   to the worktree root; AgentHub's nested scan is a superset of that.)
-- **Instructions:** global `~/.config/opencode/AGENTS.md`; OpenCode V1 can fall back to
-  `~/.claude/CLAUDE.md`. Project nested `AGENTS.md`; V1 can use `CLAUDE.md` when a
-  nonempty `AGENTS.md` is absent in that directory. AgentHub checks `opencode --version`
-  to disable the Claude fallback for V2; when the CLI version cannot be determined, it
-  retains the V1 fallback.
+- **Instructions:** global `~/.config/opencode/AGENTS.md`; OpenCode can fall back to
+  `~/.claude/CLAUDE.md`. Project nested `AGENTS.md`; `CLAUDE.md` is used when a
+  nonempty `AGENTS.md` is absent in that directory. OpenCode 2.0.0–2.3.0 did not read the
+  Claude files; [2.3.1](https://github.com/anomalyco/opencode/releases/tag/v2.3.1) restored
+  the fallback. AgentHub checks `opencode --version` and disables it only for 2.x below
+  2.3.1; when the CLI version cannot be determined, it keeps the fallback.
 - **MCP:** global `$XDG_CONFIG_HOME/opencode/opencode.json` or `opencode.jsonc` (default
   `~/.config/opencode/`) and the same files in `~/.opencode/` and in the directory named by `$OPENCODE_CONFIG_DIR`;
   project `<project>/opencode.json` or `opencode.jsonc` and `<project>/.opencode/opencode.json`
@@ -388,6 +452,31 @@ whole agent directory for the default profile, and a named profile (`OMP_PROFILE
 - **Sessions:** the SQLite database `opencode.db` (and channel databases `opencode-<channel>.db`) in `$XDG_DATA_HOME/opencode`
   (default `~/.local/share/opencode/`, also on Windows), opened read-only; the older JSON layout (`storage/session` and
   `project/`) is still read.
+
+## Pi (`pi`)
+
+Sources: the [Pi docs](https://pi.dev/docs/latest/session) — `sessions.md`, `session-format.md`, the README "Environment
+Variables", `skills.md`, `mcp.md`, `settings.md`, `configuration.md` — and `pi --help` (1.5.2). Checked 2026-11-17.
+MCP exists from Pi 1.5; older versions have none.
+
+The agent directory is `~/.pi/agent`; `PI_CODING_AGENT_DIR` replaces it and `PI_CODING_AGENT_SESSION_DIR` replaces the
+sessions directory. A `--session-dir` chosen on the command line cannot be observed.
+
+- **Sessions:** `<sessions>/--<encoded-cwd>--/<timestamp>_<sessionId>.jsonl`, the same layout as Oh My Pi (both share one
+  reader). The working directory comes from the `type:"session"` header (`id`, `timestamp`, `cwd`); only the top-level
+  `*.jsonl` of a bucket is a session. A typed prompt is a `type:"message"` entry with `role:"user"` (string or block
+  `content`); `system`, `assistant`, `toolResult`, `bashExecution`, `custom` and `custom_message` entries are not. The
+  title is the last `type:"session_info"` entry's `name` (set by `/name` or `--name`). Resume: `pi --session <id>`.
+- **Skills:** `<agent dir>/skills` and per project `.pi/skills` (Pi loads project resources only after trust);
+  `~/.agents/skills` and `.agents/skills` are the shared provider's. Not modelled: the `skills` array of `settings.json`,
+  package skills, standalone Markdown skills.
+- **MCP:** the `mcpServers` map of `<agent dir>/mcp.json` and the project's `.pi/mcp.json` (a same-named project entry
+  replaces the user one). Only environment-variable names are kept; `mcp-auth.json` is never read.
+- **Instructions:** `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md` in the agent directory and in the project (including
+  nested directories, which apply when Pi runs there), and `SYSTEM.md` / `APPEND_SYSTEM.md` in the agent directory and
+  the project's `.pi/`. An `AGENTS.md`/`CLAUDE.md` next to an `AGENTS.override.md` is listed with a note.
+- **Config:** `settings.json` of the agent directory and of the project's `.pi/` - inventory only; `auth.json`,
+  `trust.json` and `models-store.json` are not inventoried.
 
 ## Qwen Code
 
@@ -417,13 +506,16 @@ terminal in the project directory, with the native session ID it read from the a
 | Cursor CLI | `cursor-agent --resume <id>` |
 | Freebuff | `freebuff --continue <chatId>` |
 | Grok Build | `grok --resume <id>` |
+| Hermes Agent | `hermes --resume <id>` |
 | Junie CLI | `junie --resume --session-id=<id>` |
 | Kilo Code CLI | `kilo --session <id>` |
 | Kimi Code | `kimi --session <id>` |
 | Kiro CLI | `kiro-cli chat --resume-id <id>` |
 | MiMo Code | `mimo --session <id>` |
 | Oh My Pi | `omp --resume <id>` |
+| OpenClaw | `openclaw resume <session key>` |
 | OpenCode | `opencode --session <id>` |
+| Pi | `pi --session <id>` |
 | Mistral Vibe | `vibe --resume <id>` |
 | Qwen Code | `qwen --resume <id>` |
 
@@ -470,6 +562,7 @@ modification time and allowlisted highlights. The summary includes the Config co
 | Cursor | `$CURSOR_CONFIG_DIR/cli-config.json`, or `$XDG_CONFIG_HOME/cursor/cli-config.json` on non-Windows systems when set, else `~/.cursor/cli-config.json` | `.cursor/cli.json` |
 | Freebuff | `$FREEBUFF_CONFIG_DIR/settings.json` (default `~/.config/manicode/settings.json`) | — |
 | Grok | `$GROK_HOME/config.toml` (default `~/.grok/config.toml`) | `.grok/config.toml` |
+| Hermes Agent | `<Hermes home>/config.yaml` (`HERMES_HOME`; default `~/.hermes/`, `%LOCALAPPDATA%\hermes` on Windows) | — |
 | Junie | `$JUNIE_HOME/{config.json,settings.json,allowlist.json,sandbox.json}` (default `~/.junie/`) | `.junie/config.json` |
 | Kilo | `$XDG_CONFIG_HOME/kilo/{kilo.json,kilo.jsonc,config.json,tui.json,tui.jsonc}` (default `~/.config/kilo/`) | `kilo.json(c)`, `.kilo/kilo.json(c)`, `.kilocode/kilo.json(c)`, `.kilo/tui.json(c)` |
 | Kimi Code | `$KIMI_CODE_HOME/{config.toml,tui.toml}` (default `~/.kimi-code/`) | — |
@@ -477,7 +570,9 @@ modification time and allowlisted highlights. The summary includes the Config co
 | MiMo Code | `<config dir>/{mimocode.json,mimocode.jsonc,tui.json,tui.jsonc}` (default `~/.config/mimocode/`) | `mimocode.json(c)`, `.mimocode/mimocode.json(c)`, `.mimocode/tui.json(c)` |
 | Mistral Vibe | `$VIBE_HOME/config.toml` (default `~/.vibe/config.toml`) | `.vibe/config.toml` |
 | Oh My Pi | `<agent dir>/{config.yml,config.yaml}` (default `~/.omp/agent/`) | `.omp/config.yml`, `.omp/config.yaml` |
+| OpenClaw | `<state>/openclaw.json` (`OPENCLAW_CONFIG_PATH`) | — |
 | OpenCode | `$XDG_CONFIG_HOME/opencode/{opencode.json,opencode.jsonc,cli.json}` (default `~/.config/opencode/`) | `opencode.json`, `opencode.jsonc` |
+| Pi | `$PI_CODING_AGENT_DIR/settings.json` (default `~/.pi/agent/settings.json`) | `.pi/settings.json` |
 | Qwen | `~/.qwen/settings.json` | `.qwen/settings.json`, `.qwen/settings.local.json` |
 
 Only installed agents are scanned. Nested configurations are inventory, **not a calculation of

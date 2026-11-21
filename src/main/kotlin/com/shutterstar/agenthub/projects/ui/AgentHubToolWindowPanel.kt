@@ -64,6 +64,12 @@ import com.shutterstar.agenthub.projects.model.ProjectVisibility
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexService
 import com.shutterstar.agenthub.storage.PersistedIndexWarmup
 import com.shutterstar.agenthub.storage.SharedStateChangeMonitor
+import com.shutterstar.agenthub.usage.discovery.UsageDiscoveryService
+import com.shutterstar.agenthub.usage.model.UsageSourceCatalog
+import com.shutterstar.agenthub.usage.persistence.UsageCacheService
+import com.shutterstar.agenthub.usage.ui.UsageController
+import com.shutterstar.agenthub.usage.ui.UsageControllerState
+import com.shutterstar.agenthub.usage.ui.UsagePanel
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.Component
@@ -138,6 +144,7 @@ class AgentHubToolWindowPanel(
         splitProportion = splitProportion,
         retryEnvironment = ::retryAgentEnvironmentSummary,
         hasEnvironmentFailure = ::hasAgentEnvironmentFailure,
+        signInToUsage = { agentId -> signInToUsage(agentId) },
     )
     private val skillSyncService = SkillSyncApplicationService.getInstance()
     private val skillsPanel: SkillsPanel = SkillsPanel(
@@ -237,6 +244,41 @@ class AgentHubToolWindowPanel(
             if (selector != null) skillsPanel.refreshPreferring(selector) else skillsPanel.refresh()
         },
     )
+    private val usageDiscovery = UsageDiscoveryService(
+        isAgentVisible = isAgentVisible,
+        liveQueriesEnabled = { AgentSettingsState.getInstance().usageLiveQueriesEnabled },
+        previousSnapshots = { UsageCacheService.getInstance().cachedSnapshots() },
+    )
+    private val usagePanel = UsagePanel(
+        openAgent = ::navigateToAgent,
+        signIn = { agentId -> signInToUsage(agentId) },
+        onRefreshRequested = { refreshUsage(force = true) },
+        onLiveQueriesToggled = { enabled ->
+            AgentSettingsState.getInstance().setUsageLiveQueriesEnabled(enabled)
+        },
+        onOnlyWithLimitsToggled = { enabled ->
+            AgentSettingsState.getInstance().setUsageOnlyWithLimits(enabled)
+        },
+        splitProportion = splitProportion,
+    )
+    private var usageLoading = false
+    private val usageController = UsageController(
+        executor = { ApplicationManager.getApplication().executeOnPooledThread(it) },
+        deliver = { callback -> ApplicationManager.getApplication().invokeLater({
+            if (!disposed && !project.isDisposed) callback()
+        }, ModalityState.any()) },
+        discover = { currentProjects -> usageDiscovery.discover(currentProjects) },
+        cached = {
+            val cache = UsageCacheService.getInstance()
+            cache.cachedSnapshots(isAgentVisible) to cache.lastRefreshedAt()
+        },
+        recordCache = { discovered -> UsageCacheService.getInstance().record(discovered) },
+        isLiveEnabled = { AgentSettingsState.getInstance().usageLiveQueriesEnabled },
+        formatWarning = { agentId, message -> "${AgentHubUiComponents.displayName(agentId)}: $message" },
+        onStateChanged = ::onUsageStateChanged,
+        hasSlowProviders = { usageDiscovery.hasSlowProviders() },
+        discoverSlow = { fast -> usageDiscovery.discoverSlow(fast) },
+    )
     private val tabs = LeftAlignedTabbedPane()
     private val toolbar = JPanel(BorderLayout(JBUI.scale(AgentHubUiComponents.CONTROL_GAP), 0)).apply {
         isOpaque = false
@@ -281,12 +323,14 @@ class AgentHubToolWindowPanel(
                     SkillOwnershipStateService.getInstance().storageStamp(),
                     SkillSyncAuditStateService.getInstance().storageStamp(),
                     SkillSyncSettingsStateService.getInstance().storageStamp(),
+                    UsageCacheService.getInstance().storageStamp(),
                 ).joinToString("|")
                 val changed = sharedChanges.observe(stamp)
                 if (changed) PersistedIndexWarmup.warm()
                 if (changed) ApplicationManager.getApplication().invokeLater({
                     if (!disposed && !project.isDisposed) {
                         environmentDiscovery.invalidateAll()
+                        usageController.loadCached()
                         reloadFromCache()
                         skillsPanel.refresh()
                     }
@@ -374,6 +418,16 @@ class AgentHubToolWindowPanel(
         }, ModalityState.any())
     }
 
+    private val usageSettingsSubscription = AgentSettingsState.getInstance().addUsageSettingsListener {
+        ApplicationManager.getApplication().invokeLater({
+            if (!disposed && !project.isDisposed) {
+                usagePanel.setLiveQueriesEnabled(AgentSettingsState.getInstance().usageLiveQueriesEnabled)
+                usageController.resetCooldown()
+                refreshUsage(force = true)
+            }
+        }, ModalityState.any())
+    }
+
     init {
         KeyboardFocusManager.getCurrentKeyboardFocusManager()
             .addPropertyChangeListener("permanentFocusOwner", sharedFocusListener)
@@ -395,6 +449,7 @@ class AgentHubToolWindowPanel(
         tabs.addTab("Projects", projectsPanel)
         tabs.addTab("Agents", agentsPanel)
         tabs.addTab("Skills", skillsPanel)
+        tabs.addTab("Usage", usagePanel)
         tabs.setHeader(toolbar)
 
         statusLabel.border = JBUI.Borders.emptyTop(AgentHubUiComponents.CONTROL_GAP)
@@ -412,11 +467,14 @@ class AgentHubToolWindowPanel(
         refreshButton.addActionListener { refresh() }
         skillsPanel.onClearSearch = { searchField.text = "" }
         skillsPanel.onSummaryChanged = { if (activeTab == "Skills") updateSkillsStatus() }
+        usagePanel.onClearSearch = { searchField.text = "" }
+        usagePanel.onSummaryChanged = { if (activeTab == "Usage") updateUsageStatus() }
         projectsPanel.onClearSearch = { searchField.text = "" }
         agentsPanel.onClearSearch = { searchField.text = "" }
         projectsPanel.onDetailsOnlyChanged = { setDetailsOnly("Projects", it) }
         agentsPanel.onDetailsOnlyChanged = { setDetailsOnly("Agents", it) }
         skillsPanel.onDetailsOnlyChanged = { setDetailsOnly("Skills", it) }
+        usagePanel.onDetailsOnlyChanged = { setDetailsOnly("Usage", it) }
         tabs.addSelectionListener {
             activeTab = tabs.selectedTitle() ?: "Projects"
             switchingTabs = true
@@ -428,22 +486,38 @@ class AgentHubToolWindowPanel(
             val label = when (activeTab) {
                 "Skills" -> "Search skills"
                 "Agents" -> "Search agents"
+                "Usage" -> "Search usage"
                 else -> "Search projects"
             }
             searchField.textEditor.emptyText.text = label
             searchField.textEditor.accessibleContext.accessibleName = label
-            refreshButton.toolTipText = if (activeTab == "Skills") "Refresh skills in this scope" else "Refresh project index"
+            refreshButton.toolTipText = when (activeTab) {
+                "Skills" -> "Refresh skills in this scope"
+                "Usage" -> "Refresh usage limits"
+                else -> "Refresh project index"
+            }
             refreshButton.accessibleContext.accessibleName = refreshButton.toolTipText
-            refreshButton.isEnabled = activeTab == "Skills" || !refreshing
+            val activeLoading = when (activeTab) {
+                "Skills" -> false
+                "Usage" -> usageLoading
+                else -> refreshing
+            }
+            refreshSpinner.isVisible = activeLoading
+            if (activeLoading) refreshSpinner.resume() else refreshSpinner.suspend()
+            refreshButton.isEnabled = !activeLoading
             if (activeTab == "Skills") skillsPanel.showDefaultContent()
             render()
             when (activeTab) {
                 "Skills" -> Unit
+                "Usage" -> usagePanel.showDefaultContent()
                 "Agents" -> agentsPanel.showDefaultContent()
                 else -> projectsPanel.showDefaultContent()
             }
             updateToolbarVisibility()
         }
+        usagePanel.setLiveQueriesEnabled(AgentSettingsState.getInstance().usageLiveQueriesEnabled)
+        usagePanel.setOnlyWithLimits(AgentSettingsState.getInstance().usageOnlyWithLimits)
+        usageController.loadCached()
         reloadFromCache()
         skillsPanel.refresh()
         if (!indexService.hasLiveResults()) refresh()
@@ -478,6 +552,9 @@ class AgentHubToolWindowPanel(
     private fun onInstalledAgentsChanged() {
         environmentDiscovery.invalidateAll()
         updateInstallationCard()
+        usagePanel.setLiveQueriesEnabled(AgentSettingsState.getInstance().usageLiveQueriesEnabled)
+        usageController.resetCooldown()
+        usageController.loadCached()
         reloadFromCache()
         skillsPanel.refresh()
     }
@@ -496,6 +573,7 @@ class AgentHubToolWindowPanel(
         projects = indexService.cachedProjects()
         updateSkillProjects()
         updateEnvironmentSummaries()
+        refreshUsage()
         render()
     }
 
@@ -739,10 +817,35 @@ class AgentHubToolWindowPanel(
         refreshButton.isEnabled = !state.loading
     }
 
+    private fun signInToUsage(agentId: String) {
+        UsageSourceCatalog.loginCommand(agentId)?.let { command ->
+            TerminalCommandRunner.run(project, "🤖 ${AgentHubUiComponents.displayName(agentId)} · Sign in", command)
+        }
+    }
+
+    private fun onUsageStateChanged(state: UsageControllerState) {
+        usageLoading = state.loading
+        usagePanel.setState(state.snapshots, state.warnings, state.loading, state.refreshedAt)
+        agentsPanel.setUsageSnapshots(state.snapshots)
+        if (activeTab != "Usage") return
+        refreshSpinner.isVisible = state.loading
+        if (state.loading) refreshSpinner.resume() else refreshSpinner.suspend()
+        refreshButton.isEnabled = !state.loading
+        updateUsageStatus()
+    }
+
+    private fun refreshUsage(force: Boolean = false) {
+        usageController.refresh(projects, force = force)
+    }
+
     private fun refresh() {
         refreshSharedDataIfChanged()
         if (activeTab == "Skills") {
             skillsPanel.refresh()
+            return
+        }
+        if (activeTab == "Usage") {
+            refreshUsage(force = true)
             return
         }
         environmentDiscovery.invalidateAll()
@@ -755,13 +858,16 @@ class AgentHubToolWindowPanel(
             ApplicationManager.getApplication().invokeLater {
                 if (disposed) return@invokeLater
                 refreshing = false
-                refreshButton.isEnabled = true
-                refreshSpinner.suspend()
-                refreshSpinner.isVisible = false
+                if (activeTab != "Skills" && activeTab != "Usage") {
+                    refreshButton.isEnabled = true
+                    refreshSpinner.suspend()
+                    refreshSpinner.isVisible = false
+                }
                 if (error == null) {
                     projects = indexService.cachedProjects()
                     updateSkillProjects()
                     updateEnvironmentSummaries()
+                    refreshUsage()
                     val warningStatus = result.warnings.takeIf { it.isNotEmpty() }?.joinToString(", ") { warning ->
                         "${AgentHubUiComponents.displayName(warning.agentId)}: ${warning.message}"
                     }
@@ -778,6 +884,11 @@ class AgentHubToolWindowPanel(
         if (activeTab == "Skills") {
             skillsPanel.setQuery(query)
             updateSkillsStatus()
+            return
+        }
+        if (activeTab == "Usage") {
+            usagePanel.setQuery(query)
+            updateUsageStatus()
             return
         }
         val settings = AgentSettingsState.getInstance()
@@ -811,6 +922,10 @@ class AgentHubToolWindowPanel(
         statusLabel.text = listOfNotNull(skillsOperationStatus, summary).joinToString("\n")
     }
 
+    private fun updateUsageStatus() {
+        statusLabel.text = usagePanel.summaryText
+    }
+
     override fun dispose() {
         disposed = true
         skillsStatusClearTimer.stop()
@@ -823,9 +938,11 @@ class AgentHubToolWindowPanel(
         refreshSpinner.dispose()
         skillsController.close()
         skillMutationController.close()
+        usageController.close()
         refreshSubscription.close()
         detectionSubscription.close()
         projectViewSubscription.close()
+        usageSettingsSubscription.close()
         checkingSpinner.dispose()
         if (activePanelCount.decrementAndGet() == 0) {
             indexService.cancelActiveRefresh()
@@ -964,6 +1081,16 @@ class AgentHubToolWindowPanel(
             searchField.text = ""
             render()
             projectsPanel.selectProject(projectId)
+        }
+    }
+
+    /** Deep link from the Usage tab: open that agent's details on the Agents tab. */
+    private fun navigateToAgent(agentId: String) {
+        tabs.select("Agents")
+        if (!agentsPanel.selectAgent(agentId)) {
+            searchField.text = ""
+            render()
+            agentsPanel.selectAgent(agentId)
         }
     }
 

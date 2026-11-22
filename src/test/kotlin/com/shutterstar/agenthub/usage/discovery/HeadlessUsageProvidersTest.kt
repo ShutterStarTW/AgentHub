@@ -33,9 +33,12 @@ class HeadlessUsageProvidersTest {
           75%  Start fresh when you switch tasks · run /clear
     """.trimIndent()
 
+    private fun claudeRunner(output: String): (String) -> String =
+        { if (it == ClaudeCliUsageProvider.HELP_COMMAND) "  --no-session-persistence  Do not save sessions" else output }
+
     @Test
     fun shouldParseClaudeUsageCommandOutput() {
-        val provider = ClaudeCliUsageProvider(runCommand = { claudeOutput }, defaultZone = ZoneId.of("UTC"))
+        val provider = ClaudeCliUsageProvider(runCommand = claudeRunner(claudeOutput), defaultZone = ZoneId.of("UTC"))
 
         val snapshot = provider.discover(now)
 
@@ -53,15 +56,51 @@ class HeadlessUsageProvidersTest {
     }
 
     @Test
+    fun shouldRunClaudeUsageWithoutPersistingASession() {
+        val commands = mutableListOf<String>()
+        ClaudeCliUsageProvider(runCommand = { commands += it; claudeRunner(claudeOutput)(it) }, helpCache = ClaudeCliUsageProvider.HelpCache()).discover(now)
+
+        assertEquals(listOf(ClaudeCliUsageProvider.HELP_COMMAND, ClaudeCliUsageProvider.COMMAND), commands)
+        assertTrue("--no-session-persistence" in ClaudeCliUsageProvider.COMMAND)
+    }
+
+    @Test
+    fun shouldSkipClaudeUsageWhenTheCliHasNoNoSessionPersistenceFlag() {
+        val commands = mutableListOf<String>()
+        val provider = ClaudeCliUsageProvider(
+            runCommand = { commands += it; if (it == ClaudeCliUsageProvider.HELP_COMMAND) "  -p, --print  Print response" else claudeOutput },
+            helpCache = ClaudeCliUsageProvider.HelpCache(),
+        )
+
+        assertNull(provider.discover(now))
+        assertNull(provider.discover(now.plusSeconds(60)))
+
+        assertEquals(listOf(ClaudeCliUsageProvider.HELP_COMMAND), commands)
+    }
+
+    @Test
+    fun shouldNotCacheAnUnreadableClaudeHelp() {
+        var helpAnswer = ""
+        val provider = ClaudeCliUsageProvider(
+            runCommand = { if (it == ClaudeCliUsageProvider.HELP_COMMAND) helpAnswer else claudeOutput },
+            helpCache = ClaudeCliUsageProvider.HelpCache(),
+        )
+
+        assertNull(provider.discover(now))
+        helpAnswer = "  --no-session-persistence  Do not save"
+        assertNotNull(provider.discover(now.plusSeconds(1)))
+    }
+
+    @Test
     fun shouldMapClaudeModelSpecificWeeklyLinesAndTimeOnlyReset() {
         val provider = ClaudeCliUsageProvider(
-            runCommand = {
+            runCommand = claudeRunner(
                 """
                 Current session: 50% used · resets 1:10pm (UTC)
                 Current week (Opus): 12.5% used · resets Nov 25, 5am (UTC)
                 Current week (Sonnet): 3% used
-                """.trimIndent()
-            },
+                """.trimIndent(),
+            ),
         )
 
         val snapshot = provider.discover(now)!!
@@ -75,16 +114,16 @@ class HeadlessUsageProvidersTest {
     @Test
     fun shouldRollClaudeResetIntoNextYearAndReturnNullForUnrecognizedOutput() {
         val provider = ClaudeCliUsageProvider(
-            runCommand = { "Current week (all models): 9% used · resets Jan 3, 5am (UTC)" },
+            runCommand = claudeRunner("Current week (all models): 9% used · resets Jan 3, 5am (UTC)"),
         )
         val december = Instant.parse("2026-12-30T09:00:00Z")
         assertEquals(Instant.parse("2027-01-03T05:00:00Z"), provider.discover(december)!!.windows.single().resetsAt)
 
-        assertNull(ClaudeCliUsageProvider(runCommand = { "" }).discover(now))
-        assertNull(ClaudeCliUsageProvider(runCommand = { "Unknown command: /usage" }).discover(now))
+        assertNull(ClaudeCliUsageProvider(runCommand = claudeRunner("")).discover(now))
+        assertNull(ClaudeCliUsageProvider(runCommand = claudeRunner("Unknown command: /usage")).discover(now))
         assertEquals(
             UsageStatus.AUTH_REQUIRED,
-            ClaudeCliUsageProvider(runCommand = { "Not logged in · Please run /login" }).discover(now)!!.status,
+            ClaudeCliUsageProvider(runCommand = claudeRunner("Not logged in · Please run /login")).discover(now)!!.status,
         )
     }
 

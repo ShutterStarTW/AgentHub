@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.10
+
+*2026-11-22*
+
+- The Usage tab no longer leaves a `/usage` session in Claude Code's history on every refresh. Claude Code versions without the `--no-session-persistence` flag use the sign-in provider instead.
+- Sessions that only hold `/usage`, left by earlier AgentHub versions, are hidden in the tool window. AgentHub offers once to delete them and keeps your answer; with a yes it removes new ones the same way on each start.
+- **Antigravity** sessions are listed under their own project: the latest conversation was shown under the first workspace in `history.jsonl`, and conversations missing from the cache were not found.
+- **OpenClaw** sessions say that they belong to the agent workspace, not to the folder OpenClaw is started from.
+- After an update, a notification shows the top items of the new version with a link to the changelog.
+
 ## 1.3.9
 
 *2026-11-21*

@@ -9,6 +9,8 @@ import com.shutterstar.agenthub.projects.persistence.ProjectIndexService
 import java.util.concurrent.atomic.AtomicBoolean
 import com.shutterstar.agenthub.storage.AgentHubStorage
 import com.shutterstar.agenthub.storage.PersistedIndexWarmup
+import com.shutterstar.agenthub.usage.cleanup.UsageProbeCleanup
+import com.shutterstar.agenthub.whatsnew.WhatsNewNotification
 
 class LlmBrainsStartupActivity : ProjectActivity, DumbAware {
 
@@ -18,6 +20,7 @@ class LlmBrainsStartupActivity : ProjectActivity, DumbAware {
         private val detectionFinished = AtomicBoolean(false)
         private val indexRefreshHooked = AtomicBoolean(false)
         private val indexWarmupStarted = AtomicBoolean(false)
+        private val usageCleanupStarted = AtomicBoolean(false)
     }
 
     override suspend fun execute(project: Project) {
@@ -42,6 +45,7 @@ class LlmBrainsStartupActivity : ProjectActivity, DumbAware {
             val previouslyKnownIds = settings.getDetectionResults()?.keys ?: emptySet()
             // Blocks until all agents are checked — checkForUpdates can safely use the results after this
             val detected = AgentDetector.autoDetectAndConfigure() != null
+            var announced = false
             if (detected && versionChanged) {
                 if (firstEverRun) {
                     settings.applyFirstRunDefaultsIfNeeded()
@@ -49,11 +53,16 @@ class LlmBrainsStartupActivity : ProjectActivity, DumbAware {
                     settings.deactivateNewUninstalledAgents(previouslyKnownIds)
                 }
                 settings.saveLastDetectedPluginVersion(currentVersion)
+                if (!firstEverRun) announced = runCatching { WhatsNewNotification.show(project, currentVersion) }.getOrDefault(false)
             }
             detectionFinished.set(true)
             // Project/environment discovery starts only from a completed detection (the detection
             // listener also re-runs it whenever the installed set changes later).
             if (detected) ProjectIndexService.getInstance().refreshInBackground()
+            // The cleanup offer waits for the next start so two notifications do not arrive together.
+            if (!announced && usageCleanupStarted.compareAndSet(false, true)) {
+                runCatching { UsageProbeCleanup.runOnStartup() }
+            }
         }
 
         if (detectionFinished.get() && updateCheckDone.compareAndSet(false, true)) {

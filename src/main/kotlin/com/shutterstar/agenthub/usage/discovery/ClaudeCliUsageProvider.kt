@@ -7,6 +7,7 @@ import com.shutterstar.agenthub.usage.model.UsageStatus
 import com.shutterstar.agenthub.usage.model.UsageWindow
 import com.shutterstar.agenthub.usage.model.UsageWindowKind
 import java.time.DateTimeException
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -23,6 +24,7 @@ import java.util.Locale
 internal class ClaudeCliUsageProvider(
     private val runCommand: (String) -> String = { HeadlessCommandSupport.runCommand(it, timeoutSeconds = 25) },
     private val defaultZone: ZoneId = ZoneId.systemDefault(),
+    private val helpCache: HelpCache = HelpCache.SHARED,
 ) : AgentUsageProvider {
     override val agentId: String = AGENT_ID
     override val sourceKind: UsageSourceKind = UsageSourceKind.HEADLESS_COMMAND
@@ -31,9 +33,35 @@ internal class ClaudeCliUsageProvider(
     override fun isAvailable(): Boolean = true
 
     override fun discover(now: Instant): AgentUsageSnapshot? {
+        // Without the flag every refresh would leave a session in the user's Claude history, so an older
+        // Claude Code is skipped (the OAuth provider reports the quota instead).
+        if (!supportsNoPersistence(now)) return null
         val output = HeadlessCommandSupport.cleanOutput(runCommand(COMMAND))
         if (output.isBlank()) return null
         return parseUsageOutput(output, now)
+    }
+
+    private fun supportsNoPersistence(now: Instant): Boolean {
+        helpCache.get(now)?.let { return it }
+        val help = HeadlessCommandSupport.cleanOutput(runCommand(HELP_COMMAND))
+        if (help.isBlank()) return false
+        return (NO_PERSISTENCE_FLAG in help).also { helpCache.put(now, it) }
+    }
+
+    /** Remembers whether `claude --help` lists the flag, so the help text is not read on every refresh. */
+    internal class HelpCache {
+        @Volatile private var entry: Pair<Instant, Boolean>? = null
+
+        fun get(now: Instant): Boolean? = entry?.takeIf { Duration.between(it.first, now) < TTL }?.second
+
+        fun put(now: Instant, supported: Boolean) {
+            entry = now to supported
+        }
+
+        companion object {
+            val SHARED = HelpCache()
+            private val TTL: Duration = Duration.ofMinutes(10)
+        }
     }
 
     internal fun parseUsageOutput(output: String, now: Instant): AgentUsageSnapshot? {
@@ -115,7 +143,10 @@ internal class ClaudeCliUsageProvider(
 
     companion object {
         private const val AGENT_ID = "claude"
-        private const val COMMAND = "claude -p \"/usage\""
+        // --no-session-persistence: without it every refresh writes a session jsonl into ~/.claude/projects.
+        private const val NO_PERSISTENCE_FLAG = "--no-session-persistence"
+        internal const val HELP_COMMAND = "claude --help"
+        internal const val COMMAND = "claude -p \"/usage\" $NO_PERSISTENCE_FLAG"
         private const val SIX_MONTHS_SECONDS = 183L * 24 * 3600
         private val LINE = Regex("""(?im)^\s*(Current[^:\n]*):\s*(\d+(?:\.\d+)?)%\s*used\b(?:[^\n]*?\bresets\s+([^\n]*?))?\s*$""")
         private val MODEL_IN_PARENS = Regex("""\(([^)]+)\)""")

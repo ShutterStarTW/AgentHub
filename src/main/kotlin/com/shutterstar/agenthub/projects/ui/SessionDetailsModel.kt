@@ -7,10 +7,14 @@ import java.time.Instant
 import java.text.NumberFormat
 
 internal object SessionDetailsModel {
+    /** OpenClaw ignores the terminal's directory: its sessions belong to the agent workspace and `openclaw` opens `main`. */
+    const val OPENCLAW_NOTE = "OpenClaw sessions are not tied to the folder it is started from; the project shown is the agent workspace."
+
     fun lines(session: AgentSession, formatTime: (Instant) -> String): List<String> = buildList {
         session.title?.takeIf { it.isNotBlank() }?.let { add(it) }
         add("Session: ${session.id}")
         session.projectPath?.takeIf { it.isNotBlank() }?.let { add("Project: $it") }
+        if (session.agentId == "openclaw") add(OPENCLAW_NOTE)
         session.messageCount?.takeIf { it > 0 }?.let { add("Prompts: $it") }
         val visible = visibleStatistics(session)
         if ("firstEventMillis" !in visible) session.startedAt?.let { add("Started: ${formatTime(it)}") }

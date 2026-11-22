@@ -32,6 +32,8 @@ class AgentSettingsState : PersistentStateComponent<AgentSettingsState.State> {
         var usageLiveQueriesEnabled: Boolean = true,
         /** The Usage tab lists only agents that have a real limit window (or need a sign-in) when this is on. */
         var usageOnlyWithLimits: Boolean = true,
+        /** The answer to the one-time offer to delete the `/usage` sessions of older versions: "", "allowed" or "declined". */
+        var usageProbeCleanup: String = "",
         var defaultsApplied: Boolean = false,
         var activeCompanionIds: MutableList<String> = mutableListOf(),
         var useWsl: Boolean = false,
@@ -305,6 +307,12 @@ class AgentSettingsState : PersistentStateComponent<AgentSettingsState.State> {
 
     fun setUsageOnlyWithLimits(value: Boolean) {
         state.usageOnlyWithLimits = value
+    }
+
+    val usageProbeCleanup: String get() = state.usageProbeCleanup
+
+    fun setUsageProbeCleanup(value: String) {
+        state.usageProbeCleanup = value
     }
 
     fun addUsageSettingsListener(listener: () -> Unit): AutoCloseable {

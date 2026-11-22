@@ -44,6 +44,32 @@ class ClaudeProjectProviderTest {
     }
 
     @Test
+    fun `hides sessions that only hold a usage probe command`() {
+        val project = homeDirectory.resolve("work/probe").toString()
+        val command = """{"type":"user","cwd":${json(project)},"timestamp":"2026-11-20T10:00:00Z","sessionId":"probe","message":{"role":"user","content":"<command-name>/usage</command-name>\n<command-message>usage</command-message>"}}"""
+        val caveat = """{"type":"user","isMeta":true,"sessionId":"probe","message":{"role":"user","content":"<local-command-caveat>x</local-command-caveat>"}}"""
+        writeSession("project", "probe.jsonl", listOf(caveat, command))
+        writeSession(
+            "project",
+            "real.jsonl",
+            listOf(
+                command.replace("probe", "real"),
+                """{"type":"user","sessionId":"real","cwd":${json(project)},"timestamp":"2026-11-20T10:01:00Z","message":{"role":"user","content":"Javitsd a hibat"}}""",
+                """{"type":"assistant","sessionId":"real","message":{"role":"assistant","content":"ok"}}""",
+            ),
+        )
+        writeSession(
+            "project",
+            "answered.jsonl",
+            listOf(command.replace("probe", "answered"), """{"type":"assistant","sessionId":"answered","message":{"role":"assistant","content":"ok"}}"""),
+        )
+
+        val sessions = ClaudeProjectProvider(homeDirectory).discover()
+
+        assertEquals(setOf("real", "answered"), sessions.map { it.sessionId }.toSet())
+    }
+
+    @Test
     fun `lists sessions without a transcript from the prompt history`() {
         val kept = homeDirectory.resolve("work/kept")
         val gone = homeDirectory.resolve("work/gone")

@@ -305,6 +305,37 @@ class AntigravityProjectProviderTest {
         assertEquals(Instant.parse("2026-09-02T09:00:00Z"), sessions.getValue("conv-b").updatedAt)
     }
 
+    @Test
+    fun `history jsonl yields one session per conversation of its own workspace`() {
+        val llm = tempDirectory.resolve("work/LlmBrains").toString()
+        val yii = tempDirectory.resolve("work/yii2").toString()
+        val history = dataDirectory().resolve("history.jsonl")
+        Files.createDirectories(history.parent)
+        fun line(display: String, time: Long, workspace: String, id: String?, type: String? = null) =
+            "{\"display\":${json(display)},\"timestamp\":$time,\"workspace\":${json(workspace)}" +
+                (id?.let { ",\"conversationId\":${json(it)}" } ?: "") + (type?.let { ",\"type\":${json(it)}" } ?: "") + "}"
+        Files.writeString(
+            history,
+            listOf(
+                line("first llm prompt", 1_000, llm, "conv-llm"),
+                line("/usage", 2_000, llm, "conv-llm", "slash_command"),
+                line("analyze the helpers", 3_000, yii, null),
+                line("save the analysis", 4_000, yii, "conv-yii"),
+                line("/usage", 5_000, llm, "conv-probe", "slash_command"),
+                "not-json",
+            ).joinToString("\n", postfix = "\n"),
+        )
+
+        val sessions = AntigravityProjectProvider(dataDirectory()).discover().associateBy { it.sessionId }
+
+        assertEquals(setOf("conv-llm", "conv-yii"), sessions.keys)
+        assertEquals(llm, sessions.getValue("conv-llm").rawProjectPath)
+        assertEquals(yii, sessions.getValue("conv-yii").rawProjectPath)
+        assertEquals("2", sessions.getValue("conv-yii").metadata[UserMessageTally.MESSAGE_COUNT_KEY])
+        assertEquals("analyze the helpers", sessions.getValue("conv-yii").metadata[UserMessageTally.FIRST_MESSAGE_KEY])
+        assertEquals(Instant.ofEpochMilli(4_000), sessions.getValue("conv-yii").updatedAt)
+    }
+
     private fun dataDirectory(): Path = tempDirectory.resolve("antigravity-data")
 
     private fun writeBrainTranscript(

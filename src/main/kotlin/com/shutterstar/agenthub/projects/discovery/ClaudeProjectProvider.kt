@@ -155,7 +155,9 @@ class ClaudeProjectProvider(
             .getOrNull()
             ?.toInstant()
         val statistics = SessionStatisticsAccumulator(agentId)
-        val conversation = conversationMetadata(sessionFile, statistics)
+        val scan = conversationScan(sessionFile, statistics)
+        if (scan.usageProbe) return null
+        val conversation = scan.metadata
         return RawAgentProject(
             agentId = agentId,
             rawProjectPath = resolvedProjectPath,
@@ -174,7 +176,9 @@ class ClaudeProjectProvider(
      * are far from all typed by the user — tool results, meta/caveat lines, compaction summaries,
      * interrupt markers and background-task notifications are injected by Claude Code itself.
      */
-    private fun conversationMetadata(sessionFile: Path, statistics: SessionStatisticsAccumulator): Map<String, String> {
+    private fun conversationScan(sessionFile: Path, statistics: SessionStatisticsAccumulator): ConversationScan {
+        var usageCommand = false
+        var assistantSeen = false
         var summaryTitle: String? = null
         var customTitle: String? = null
         var aiTitle: String? = null
@@ -185,6 +189,7 @@ class ClaudeProjectProvider(
                 SUMMARY_TYPE -> topLevel[SUMMARY_FIELD]?.takeIf { it.isNotBlank() }?.let { summaryTitle = it }
                 CUSTOM_TITLE_TYPE -> topLevel[CUSTOM_TITLE_FIELD]?.takeIf { it.isNotBlank() }?.let { customTitle = it }
                 AI_TITLE_TYPE -> topLevel[AI_TITLE_FIELD]?.takeIf { it.isNotBlank() }?.let { aiTitle = it }
+                ASSISTANT_TYPE -> assistantSeen = true
                 USER_TYPE -> {
                     statistics.toolResult(line)
                     if (MetadataJsonParser.topLevelBooleanFields(line, INJECTED_FLAGS).values.any { it }) return@scan
@@ -193,13 +198,22 @@ class ClaudeProjectProvider(
                     if (MessageContentExtractor.hasBlockOfType(content, TOOL_RESULT_TYPES)) return@scan
                     val text = MessageContentExtractor.text(content)
                     if (text != null && INJECTED_PREFIXES.any { text.trimStart().startsWith(it) }) return@scan
+                    if (text != null && text.trimStart().startsWith(USAGE_COMMAND_PREFIX)) {
+                        usageCommand = true
+                        return@scan
+                    }
                     add(text)
                     statistics.userPrompt(text)
                 }
             }
         }
-        return tally?.metadata().orEmpty() + listOfNotNull((customTitle ?: aiTitle ?: summaryTitle)?.let { TITLE_FIELD to it })
+        val metadata = tally?.metadata().orEmpty() + listOfNotNull((customTitle ?: aiTitle ?: summaryTitle)?.let { TITLE_FIELD to it })
+        // `claude -p "/usage"` (the Usage tab of older AgentHub versions) leaves a session holding only that command.
+        val usageProbe = usageCommand && !assistantSeen && (tally?.count ?: 0) == 0
+        return ConversationScan(metadata, usageProbe)
     }
+
+    private class ConversationScan(val metadata: Map<String, String>, val usageProbe: Boolean)
 
     private data class ProjectDirectoryScan(
         val sessions: List<RawAgentProject>,
@@ -236,6 +250,8 @@ class ClaudeProjectProvider(
         private const val AI_TITLE_FIELD = "aiTitle"
         private const val SUMMARY_FIELD = "summary"
         private const val USER_TYPE = "user"
+        private const val ASSISTANT_TYPE = "assistant"
+        private const val USAGE_COMMAND_PREFIX = "<command-name>/usage</command-name>"
         private const val MESSAGE_FIELD = "message"
         private const val CONTENT_FIELD = "content"
         private const val ORIGIN_FIELD = "origin"

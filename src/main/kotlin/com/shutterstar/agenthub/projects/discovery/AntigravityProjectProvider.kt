@@ -72,7 +72,9 @@ class AntigravityProjectProvider(
                 .sorted()
                 .forEach { sessionFile ->
                     val fileName = sessionFile.fileName.toString()
-                    if (fileName.equals(CONVERSATION_METADATA_FILE, ignoreCase = true)) {
+                    if (fileName.equals(HISTORY_FILE, ignoreCase = true) && sessionFile.parent == directory) {
+                        sessions.addAll(runCatching { parseHistory(sessionFile) }.getOrDefault(emptyList()))
+                    } else if (fileName.equals(CONVERSATION_METADATA_FILE, ignoreCase = true)) {
                         val metadataSessions = runCatching { parseConversationMetadata(sessionFile) }.getOrDefault(emptyList())
                         if (metadataSessions.isEmpty()) {
                             skippedSessions++
@@ -131,6 +133,65 @@ class AntigravityProjectProvider(
             parseJsonSession(sessionFile)
         } else {
             parseJsonlSession(sessionFile)
+        }
+    }
+
+    /**
+     * `history.jsonl` is one line per typed prompt (`display`, `timestamp`, `workspace`, `conversationId`), not a single
+     * session: read as one, the whole file became a session of the first workspace in it. The first prompt of a new
+     * conversation is written before it has an id, so it joins the next conversation of the same workspace.
+     * Slash commands (`type":"slash_command"`, such as the `/usage` of a quota probe) are not prompts.
+     */
+    private fun parseHistory(historyFile: Path): List<RawAgentProject> {
+        class Conversation(val workspace: String) {
+            var first: Instant? = null
+            var last: Instant? = null
+            val tally = UserMessageTally()
+
+            fun addPrompt(time: Instant?, display: String) {
+                tally.add(display)
+                time?.let {
+                    if (first == null || it < first!!) first = it
+                    if (last == null || it > last!!) last = it
+                }
+            }
+        }
+        val conversations = linkedMapOf<String, Conversation>()
+        val pending = mutableMapOf<String, MutableList<Pair<Instant?, String>>>()
+        LocalSessionSupport.scanHeaderLines(historyFile, MAX_HISTORY_LINES, MAX_HISTORY_LINE_CHARACTERS, HISTORY_CHARACTER_BUDGET) { line ->
+            val fields = MetadataJsonParser.topLevelStringFields(line, HISTORY_FIELDS)
+            val workspace = fields[WORKSPACE_FIELD]?.takeIf { it.isNotBlank() } ?: return@scanHeaderLines false
+            if (fields[TYPE_FIELD] == SLASH_COMMAND_TYPE) return@scanHeaderLines false
+            val display = fields[DISPLAY_FIELD]?.takeIf { it.isNotBlank() } ?: return@scanHeaderLines false
+            val time = MetadataJsonParser.topLevelLongFields(line, setOf(TIMESTAMP_FIELD))[TIMESTAMP_FIELD]
+                ?.takeIf { it > 0 }?.let { runCatching { Instant.ofEpochMilli(it) }.getOrNull() }
+            val conversationId = fields[CONVERSATION_ID_FIELD]?.takeIf { it.isNotBlank() }
+            if (conversationId == null) {
+                pending.getOrPut(workspace) { mutableListOf() } += time to display
+                return@scanHeaderLines false
+            }
+            val isNew = conversationId !in conversations
+            val conversation = conversations.getOrPut(conversationId) { Conversation(workspace) }
+            if (isNew) {
+                pending.remove(workspace)?.forEach { (pendingTime, pendingDisplay) ->
+                    conversation.addPrompt(pendingTime, pendingDisplay)
+                }
+            }
+            conversation.addPrompt(time, display)
+            false
+        }
+        val sourcePath = historyFile.toAbsolutePath().normalize().toString()
+        return conversations.mapNotNull { (id, conversation) ->
+            if (conversation.tally.count == 0) return@mapNotNull null
+            RawAgentProject(
+                agentId = agentId,
+                rawProjectPath = normalizeProjectPath(conversation.workspace),
+                sessionId = id,
+                startedAt = conversation.first,
+                updatedAt = latest(conversation.first, conversation.last),
+                sourcePath = sourcePath,
+                metadata = conversation.tally.metadata(),
+            )
         }
     }
 
@@ -609,6 +670,14 @@ class AntigravityProjectProvider(
         private const val SUMMARY_UPDATED_AT_FIELD = "UpdatedAt"
         private const val LAST_MODIFIED_FIELD = "last_modified_time"
         private const val CONVERSATION_METADATA_FILE = "conversation_metadata.json"
+        private const val HISTORY_FILE = "history.jsonl"
+        private const val MAX_HISTORY_LINES = 200_000
+        private const val MAX_HISTORY_LINE_CHARACTERS = 64 * 1024
+        private const val HISTORY_CHARACTER_BUDGET = 64 * 1024 * 1024
+        private const val TYPE_FIELD = "type"
+        private const val DISPLAY_FIELD = "display"
+        private const val SLASH_COMMAND_TYPE = "slash_command"
+        private val HISTORY_FIELDS = setOf(WORKSPACE_FIELD, CONVERSATION_ID_FIELD, TYPE_FIELD, DISPLAY_FIELD)
         private const val STEP_TYPE_FIELD = "type"
         private const val STEP_CONTENT_FIELD = "content"
         private const val USER_INPUT_TYPE = "USER_INPUT"

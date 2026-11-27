@@ -96,6 +96,8 @@ class UpdateChecksTest {
 
     // --- UpdateChecker ---
 
+    private fun UpdateOutcome.withoutDetails() = copy(details = emptyList())
+
     private class FakeFetcher(private val latest: Map<String, String?>) : LatestVersionFetcher {
         val requested = mutableListOf<String>()
         override fun latest(source: VersionSource): String? {
@@ -268,7 +270,7 @@ class UpdateChecksTest {
                     } else report
                 },
             )
-            assertEquals(UpdateOutcome(emptyList(), listOf("codex")), checker.check(listOf(managed)))
+            assertEquals(UpdateOutcome(emptyList(), listOf("codex")), checker.check(listOf(managed)).withoutDetails())
         }
     }
 
@@ -286,7 +288,7 @@ class UpdateChecksTest {
                     else report
                 },
             )
-            assertEquals(expected, checker.check(listOf(managed)))
+            assertEquals(expected, checker.check(listOf(managed)).withoutDetails())
         }
     }
 
@@ -306,8 +308,94 @@ class UpdateChecksTest {
                     else report
                 },
             )
-            assertEquals(expected, checker.check(listOf(managed)))
+            assertEquals(expected, checker.check(listOf(managed)).withoutDetails())
         }
+    }
+
+    @Test
+    fun `mixed fleet gives one stable outcome and runs each package manager query once`() {
+        val npmCurrent = agent("codex", "npm update --quiet --no-fund -g @openai/codex")
+        val npmOutdated = agent("freebuff", "npm update --quiet --no-fund -g freebuff")
+        val pipOutdated = agent("semgrep", "pip install --upgrade --upgrade-strategy eager semgrep")
+        val nativeNpm = agent("claude", "claude update", "npm:@anthropic-ai/claude-code")
+        val github = agent("antigravity", "agy update", "github:google-antigravity/antigravity-cli")
+        val noSource = agent("cursor", "cursor-agent update")
+        val selfUpdating = agent("kiro", "kiro-cli update", "npm:kiro-cli").copy(selfUpdating = true)
+        val commands = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val checker = UpdateChecker(
+            runCommand = { cmd ->
+                commands += cmd
+                when (cmd) {
+                    "npm ls -g --depth=0 --json" ->
+                        """{"dependencies":{"@openai/codex":{"version":"0.5.0"},"freebuff":{"version":"1.0.0"}}}"""
+                    "npm outdated -g --json" -> """{"freebuff":{"current":"1.0.0","wanted":"1.0.0","latest":"1.2.0"}}"""
+                    "pip list --format=json" -> """[{"name": "semgrep", "version": "1.0"}]"""
+                    "pip list --outdated --format=json" ->
+                        """[{"name": "semgrep", "version": "1.0", "latest_version": "1.1"}]"""
+                    "claude --version" -> "2.1.270 (Claude Code)"
+                    "antigravity --version" -> "1.2.7"
+                    else -> ""
+                }
+            },
+            fetcher = FakeFetcher(
+                mapOf("@anthropic-ai/claude-code" to "2.1.282", "google-antigravity/antigravity-cli" to "1.2.11"),
+            ),
+        )
+
+        val outcome = checker.check(listOf(npmCurrent, npmOutdated, pipOutdated, nativeNpm, github, noSource, selfUpdating))
+
+        assertEquals(listOf("freebuff", "semgrep", "claude", "antigravity"), outcome.outdated)
+        assertEquals(listOf("cursor", "kiro"), outcome.unverified)
+        assertEquals(1, commands.count { it == "npm ls -g --depth=0 --json" })
+        assertEquals(1, commands.count { it == "npm outdated -g --json" })
+        assertEquals(1, commands.count { it == "pip list --format=json" })
+        assertEquals(1, commands.count { it == "pip list --outdated --format=json" })
+        assertEquals(setOf("claude --version", "antigravity --version"), commands.filter { it.endsWith("--version") }.toSet())
+
+        assertEquals(
+            listOf(
+                AgentUpdateInfo("codex", UpdateStatus.CURRENT, "0.5.0", null),
+                AgentUpdateInfo("freebuff", UpdateStatus.OUTDATED, "1.0.0", "1.2.0"),
+                AgentUpdateInfo("semgrep", UpdateStatus.OUTDATED, "1.0", "1.1"),
+                AgentUpdateInfo("claude", UpdateStatus.OUTDATED, "2.1.270 (Claude Code)", "2.1.282"),
+                AgentUpdateInfo("antigravity", UpdateStatus.OUTDATED, "1.2.7", "1.2.11"),
+                AgentUpdateInfo("cursor", UpdateStatus.UNKNOWN),
+                AgentUpdateInfo("kiro", UpdateStatus.UNKNOWN),
+            ),
+            outcome.details,
+        )
+    }
+
+    @Test
+    fun `installed versions of unverifiable agents are collected only on request and never change a status`() {
+        val noSource = agent("cursor", "cursor-agent update")
+        val selfUpdating = agent("kiro", "kiro-cli update", "npm:kiro-cli").copy(selfUpdating = true)
+        val commands = java.util.Collections.synchronizedList(mutableListOf<String>())
+        fun checker() = UpdateChecker(
+            runCommand = { cmd ->
+                commands += cmd
+                when (cmd) {
+                    "cursor --version" -> "\n 2026.11.1 \nmore"
+                    "kiro --version" -> "kiro-cli 2.20.1"
+                    else -> ""
+                }
+            },
+            fetcher = FakeFetcher(emptyMap()),
+        )
+
+        val plain = checker().check(listOf(noSource, selfUpdating))
+        assertEquals(emptyList<String>(), commands.filter { it.endsWith("--version") })
+        assertEquals(listOf("cursor", "kiro"), plain.unverified)
+
+        val collected = checker().check(listOf(noSource, selfUpdating), collectInstalledVersions = true)
+        assertEquals(listOf("cursor", "kiro"), collected.unverified)
+        assertEquals(
+            listOf(
+                AgentUpdateInfo("cursor", UpdateStatus.UNKNOWN, "2026.11.1"),
+                AgentUpdateInfo("kiro", UpdateStatus.UNKNOWN, "kiro-cli 2.20.1"),
+            ),
+            collected.details,
+        )
     }
 
     @Test

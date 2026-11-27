@@ -202,6 +202,30 @@ class ProjectDiscoveryServiceTest {
     }
 
     @Test
+    fun `a provider that finished before the deadline keeps its result when an earlier one timed out`() {
+        val project = Files.createDirectories(tempDirectory.resolve("late-deadline"))
+        val stuck = object : AgentProjectProvider {
+            override val agentId = "stuck"
+            override fun isAvailable() = true
+            override fun discover(): List<RawAgentProject> {
+                Thread.sleep(5_000)
+                return emptyList()
+            }
+        }
+        val finished = provider("codex", raw("codex", project, "done", "2026-08-01T10:00:00Z"))
+        val service = ProjectDiscoveryService(
+            providers = listOf(stuck, finished),
+            projectResolver = ProjectResolver { null },
+            providerTimeoutMillis = 300,
+        )
+
+        val result = service.discover()
+
+        assertEquals(listOf("stuck"), result.warnings.map { it.agentId })
+        assertEquals(listOf("done"), result.projects.single().agents.single().sessions.map { it.id })
+    }
+
+    @Test
     fun `ten thousand sessions resolve without repeated Git lookups`() {
         val project = Files.createDirectories(tempDirectory.resolve("large-history"))
         val sessions = List(10_000) { index ->

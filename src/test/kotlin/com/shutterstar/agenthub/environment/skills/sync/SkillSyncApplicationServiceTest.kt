@@ -164,7 +164,7 @@ class SkillSyncApplicationServiceTest {
 
         assertEquals(listOf("kiro"), facade.shareTargetIds())
         assertEquals(setOf("claude", "kiro"), facade.adapterTargetIds())
-        val prepared = facade.prepareShareEverywhere(skill(canonical), SkillScope.GLOBAL, null)
+        val prepared = facade.prepareShareToSelected(skill(canonical), facade.shareTargetIds().toSet(), SkillScope.GLOBAL, null)
         assertEquals(listOf("kiro"), prepared.planResult.planningRequest.targets.map { it.agentId })
     }
 
@@ -182,7 +182,7 @@ class SkillSyncApplicationServiceTest {
         )
 
         assertTrue(facade.shareTargetIds().isEmpty())
-        assertTrue(facade.prepareShareEverywhere(skill(canonical), SkillScope.GLOBAL, null).planResult.plan.steps.isEmpty())
+        assertTrue(facade.prepareShareToSelected(skill(canonical), facade.shareTargetIds().toSet(), SkillScope.GLOBAL, null).planResult.plan.steps.isEmpty())
     }
 
     @Test
@@ -203,7 +203,6 @@ class SkillSyncApplicationServiceTest {
         val prepared = listOf(
             facade.prepareShare(theSkill, "claude", SkillScope.GLOBAL, null),
             facade.prepareResync(theSkill, "claude", SkillScope.GLOBAL, null),
-            facade.prepareRepair(theSkill, "claude", SkillScope.GLOBAL, null),
             facade.prepareStopSharing(theSkill, "claude", SkillScope.GLOBAL, null),
             facade.prepareShareToSelected(theSkill, setOf("claude", "kiro"), SkillScope.GLOBAL, null),
             facade.prepareUpdateSharing(theSkill, setOf("claude"), emptySet(), SkillScope.GLOBAL, null),

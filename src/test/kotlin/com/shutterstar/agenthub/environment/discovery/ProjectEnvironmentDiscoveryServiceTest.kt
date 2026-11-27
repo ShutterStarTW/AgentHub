@@ -191,6 +191,33 @@ class ProjectEnvironmentDiscoveryServiceTest {
     }
 
     @Test
+    fun `should not persist an environment discovered across a partition switch`() {
+        val projectRoot = Files.createDirectories(temporaryDirectory.resolve("partition-project"))
+        val persisted = AtomicInteger()
+        var partition = "host"
+        val switchingProvider = object : SkillProvider {
+            override val agentId: String = "test"
+            override fun discoverGlobal(): List<SkillSourceRecord> = emptyList()
+            override fun discoverProject(project: DiscoveredProject): List<SkillSourceRecord> {
+                partition = "wsl-Ubuntu"
+                return emptyList()
+            }
+        }
+        val service = ProjectEnvironmentDiscoveryService(
+            configDiscovery = com.shutterstar.agenthub.environment.config.discovery.ConfigDiscoveryService(emptyList()),
+            skillDiscovery = SkillDiscoveryService(listOf(switchingProvider)),
+            mcpDiscovery = McpDiscoveryService(emptyList()),
+            instructionDiscovery = InstructionDiscoveryService(emptyList()),
+            persist = { _, _ -> persisted.incrementAndGet() },
+            partition = { partition },
+        )
+
+        service.discover(project(projectRoot, "claude", "codex"))
+
+        assertEquals(0, persisted.get())
+    }
+
+    @Test
     fun `global discovery runs once and is reused across multiple projects`() {
         val globalCalls = AtomicInteger()
         val projectCalls = AtomicInteger()

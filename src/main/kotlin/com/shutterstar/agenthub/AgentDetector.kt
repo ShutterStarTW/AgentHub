@@ -5,6 +5,8 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.project.Project
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -37,6 +39,7 @@ object AgentDetector {
      * "unknown" rather than a false "not installed" that would hide the agent's data.
      */
     fun probeCommand(command: String, executionSettings: WslSupport.Settings = WslSupport.settings): Boolean? {
+        var started: Process? = null
         return try {
             val process = if (OsDetector.isWindows() && executionSettings.useWsl) {
                 // nativeCheck, not plain `command -v`: WSL's interop PATH would report every
@@ -58,10 +61,11 @@ object AgentDetector {
                     }
                     .start()
             }
+            started = process
 
             val completed = process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS)
             if (!completed) {
-                process.destroyForcibly()
+                ProcessSupport.destroyTree(process)
                 return null
             }
 
@@ -69,16 +73,21 @@ object AgentDetector {
         } catch (_: IOException) {
             null
         } catch (_: InterruptedException) {
+            started?.let(ProcessSupport::destroyTree)
             Thread.currentThread().interrupt()
             null
         }
     }
 
     /** Definitive results only: an agent whose probe could not run is left out (= unknown). */
-    fun detectAllAgents(executionSettings: WslSupport.Settings = WslSupport.settings): Map<String, Boolean> {
-        val agents = (CodingAgents.all + CompanionTools.all).filterNot {
+    /** The agents and companion tools a detection checks in this environment. */
+    private fun detectableAgents(executionSettings: WslSupport.Settings): List<CodingAgent> =
+        (CodingAgents.all + CompanionTools.all).filterNot {
             OsDetector.isWindows() && !executionSettings.useWsl && it.unsupportedOnWindows
         }
+
+    fun detectAllAgents(executionSettings: WslSupport.Settings = WslSupport.settings): Map<String, Boolean> {
+        val agents = detectableAgents(executionSettings)
         val pool = Executors.newFixedThreadPool(minOf(agents.size, 16))
         return try {
             agents
@@ -122,20 +131,33 @@ object AgentDetector {
         return DetectionResultsWatcher.applyResults(results)
     }
 
-    // [onDone] runs on the EDT after detection finishes.
-    fun detectAndNotify(project: Project?, onDone: () -> Unit = {}) {
+    // [onDone] runs on the EDT after detection finishes. With [reportInTerminal] the result is also printed in an
+    // IDE terminal (the terminal mode of "Detect installed agents").
+    fun detectAndNotify(project: Project?, reportInTerminal: Boolean = false, onDone: () -> Unit = {}) {
         val settings = AgentSettingsState.getInstance()
         val snapshot = settings.executionSnapshot()
         ApplicationManager.getApplication().executeOnPooledThread {
             val results = detectAllAgents(snapshot.settings)
+            val reportFile = if (reportInTerminal && project != null) {
+                writeReportFile(
+                    DetectionReportFormatter.format(
+                        detectableAgents(snapshot.settings).map { DetectionReportFormatter.Entry(it.name, results[it.id]) },
+                        color = true,
+                    ),
+                )
+            } else null
             // ModalityState.any() so this runs while the modal Settings dialog is open (else deferred until close).
             ApplicationManager.getApplication().invokeLater({
                 var applied: Pair<Int, Int>? = null
                 if (!settings.applyIfCurrent(snapshot) { applied = applyDetection(results) }) {
+                    reportFile?.let { runCatching { Files.deleteIfExists(it) } }
                     onDone()
                     return@invokeLater
                 }
                 AgentSettingsConfigurable.scheduleRefresh()
+                if (reportFile != null && project != null) {
+                    TerminalCommandRunner.run(project, "🔍 Detect Agents", ReportFileCommand.build(reportFile))
+                }
                 val summary = applied
                 if (summary != null) {
                     DetectionResultsWatcher.showNotification(
@@ -157,7 +179,11 @@ object AgentDetector {
         }
     }
 
-    fun checkForUpdates(project: Project, notifyIfUpToDate: Boolean = false) {
+    /**
+     * Checks the installed agents for updates and stores the result. With [reportInTerminal] the per-agent versions
+     * are collected too and the report is printed in an IDE terminal (the terminal mode of "Check for updates").
+     */
+    fun checkForUpdates(project: Project, notifyIfUpToDate: Boolean = false, reportInTerminal: Boolean = false) {
         val settings = AgentSettingsState.getInstance()
         val snapshot = settings.executionSnapshot()
         val detectionResults = settings.getDetectionResults() ?: return
@@ -167,18 +193,26 @@ object AgentDetector {
         val outcome = UpdateChecker(
             runCommand = { runSilent(shellArgv(it, snapshot.settings), VERSION_TIMEOUT_SECONDS) },
             runCommandResult = { runSilentResult(shellArgv(it, snapshot.settings), VERSION_TIMEOUT_SECONDS) },
-        ).check(installedAgents)
+        ).check(installedAgents, collectInstalledVersions = reportInTerminal)
+        val reportFile = if (reportInTerminal) writeUpdateReport(installedAgents, outcome) else null
         if (!settings.applyIfCurrent(snapshot) {
                 settings.saveOutdatedAgents(outcome.outdated)
                 settings.saveUnverifiedAgents(outcome.unverified)
-            }) return
+            }) {
+            reportFile?.let { runCatching { Files.deleteIfExists(it) } }
+            return
+        }
 
         val byId = installedAgents.associateBy { it.id }
         val outdatedNames = outcome.outdated.mapNotNull { byId[it]?.name }
         val unverifiedNames = outcome.unverified.mapNotNull { byId[it]?.name }
         ApplicationManager.getApplication().invokeLater({
-            if (!settings.isExecutionCurrent(snapshot)) return@invokeLater
+            if (!settings.isExecutionCurrent(snapshot)) {
+                reportFile?.let { runCatching { Files.deleteIfExists(it) } }
+                return@invokeLater
+            }
             AgentSettingsConfigurable.scheduleRefresh()
+            reportFile?.let { TerminalCommandRunner.run(project, "📋 Check Updates", ReportFileCommand.build(it)) }
             when {
                 outdatedNames.isNotEmpty() -> DetectionResultsWatcher.showNotification(
                     project,
@@ -198,6 +232,22 @@ object AgentDetector {
                 )
             }
         }, ModalityState.any())
+    }
+
+    /** The terminal report of [outcome] in a temp file the terminal prints and deletes; null when it cannot be written. */
+    private fun writeUpdateReport(installedAgents: List<CodingAgent>, outcome: UpdateOutcome): Path? {
+        val byId = installedAgents.associateBy { it.id }
+        val entries = outcome.details.mapNotNull { info -> byId[info.agentId]?.let { UpdateReportFormatter.Entry(it.name, info) } }
+        return writeReportFile(UpdateReportFormatter.format(entries, color = true))
+    }
+
+    /** [text] in a temp file the terminal prints and deletes; null when it cannot be written. */
+    private fun writeReportFile(text: String): Path? = try {
+        val file = Files.createTempFile("llmbrains-report-", ".txt")
+        Files.writeString(file, text, Charsets.UTF_8)
+        file
+    } catch (_: IOException) {
+        null
     }
 
     // Runs a command line in the active shell (WSL distro / cmd / login bash); 2>&1 because several
@@ -225,11 +275,11 @@ object AgentDetector {
             val running = ProcessBuilder(*cmd).redirectErrorStream(true).start().also { process = it }
             val output = java.util.concurrent.atomic.AtomicReference("")
             val reader = Thread {
-                runCatching { running.inputStream.bufferedReader().use { it.readText() } }
+                runCatching { ProcessSupport.readCapped(running.inputStream) }
                     .onSuccess(output::set)
             }.also { it.isDaemon = true; it.start() }
             if (!running.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                running.destroyForcibly()
+                ProcessSupport.destroyTree(running)
                 CommandOutput("", null)
             } else {
                 reader.join(1000)
@@ -242,7 +292,7 @@ object AgentDetector {
             CommandOutput("", null)
         } finally {
             process?.let { running ->
-                if (running.isAlive) running.destroyForcibly()
+                if (running.isAlive) ProcessSupport.destroyTree(running)
                 runCatching { running.inputStream.close() }
             }
         }

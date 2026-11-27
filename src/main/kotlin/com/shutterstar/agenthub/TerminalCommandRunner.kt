@@ -193,11 +193,6 @@ object TerminalCommandRunner {
         runInTerminal(project, title, WslSupport.wrapForTerminal(command, executionSettings, linuxDirectory), terminalDirectory)
     }
 
-    /** Runs a host command in the IDE terminal without applying the optional WSL wrapper. */
-    fun runNative(project: Project, title: String, command: String) {
-        runInTerminal(project, title, command, project.basePath)
-    }
-
     private fun runInTerminal(
         project: Project,
         title: String,

@@ -70,8 +70,12 @@ internal class BulkMigrationOrchestrator(
             )
 
         val shareResults = shareRequests.map { request ->
-            val prepared = service.prepareShare(freshSkill, request.targetAgentId, scope, project)
-            val result = service.execute(prepared)
+            // One target's failure must not hide the already promoted skill or skip the remaining targets.
+            val result = runCatching {
+                service.execute(service.prepareShare(freshSkill, request.targetAgentId, scope, project))
+            }.getOrElse { error ->
+                return@map BulkShareOutcome(request.targetAgentId, false, "Share failed (${error.javaClass.simpleName}).")
+            }
             val succeeded = result.status == SyncOperationStatus.SUCCESS || result.status == SyncOperationStatus.PARTIAL_SUCCESS
             BulkShareOutcome(
                 request.targetAgentId,

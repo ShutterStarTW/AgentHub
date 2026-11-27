@@ -58,3 +58,22 @@ jobs:
             build/test-results/test
             build/reports/jacoco/test
           if-no-files-found: ignore
+
+  # The Windows PowerShell and Git Bash update-script fixtures are skipped on the Ubuntu runner above.
+  windows-scripts:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Run the update-script tests
+        run: .\gradlew.bat test --tests "com.shutterstar.agenthub.UpdateScriptsTest" --stacktrace

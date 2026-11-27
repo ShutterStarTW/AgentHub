@@ -1251,6 +1251,35 @@ class SkillSyncEngineTest {
     }
 
     @Test
+    fun `a failing audit write keeps the applied result and reports the missing history entry`() {
+        val canonicalDir = writeSkillMd(root.resolve("canonical"), "content")
+        val skill = agentSkill(sharedPath = canonicalDir)
+        val targetRoot = root.resolve("claude-root")
+        val target = FakeTarget("claude", targetRoot)
+        val failingTrail = object : com.shutterstar.agenthub.environment.skills.sync.audit.SyncAuditTrail by InMemorySyncAuditTrail() {
+            override fun record(entry: com.shutterstar.agenthub.environment.skills.sync.audit.SyncAuditEntry) {
+                throw java.io.UncheckedIOException(java.io.IOException("disk full"))
+            }
+        }
+        val service = SkillSyncEngine(auditTrail = failingTrail)
+        val planResult = service.planner.plan(
+            SkillSyncRequest.ShareSkill(skillId = "skill-1", targetAgentId = "claude"),
+            skill,
+            "op-1",
+            mapOf("claude" to target),
+            setOf("claude"),
+            SkillScope.GLOBAL,
+            null,
+        )
+
+        val syncResult = service.runner.execute(planResult, mapOf("claude" to target), SkillScope.GLOBAL, null, root.resolve("backups"))
+
+        assertTrue(Files.exists(targetRoot.resolve("canonical").resolve("SKILL.md")))
+        assertEquals(SyncOperationStatus.PARTIAL_SUCCESS, syncResult.status)
+        assertTrue(syncResult.errors.any { "history" in it.message })
+    }
+
+    @Test
     fun `a failed execute still records an audit entry with FAILED status`() {
         val canonicalDir = writeSkillMd(root.resolve("canonical"), "content")
         val skill = agentSkill(sharedPath = canonicalDir)

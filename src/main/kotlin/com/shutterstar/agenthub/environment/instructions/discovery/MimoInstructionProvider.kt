@@ -28,31 +28,11 @@ class MimoInstructionProvider(
     )
     private val globalClaudeFile = homeDirectory.resolve(".claude").resolve(CLAUDE_FILE)
 
-    override fun discoverGlobal(): List<InstructionSource> {
-        val agents = globalFiles.firstOrNull(::isNonEmptyFile)
-        val file = agents ?: globalClaudeFile
-        val type = if (agents != null) InstructionType.AGENTS_MD else InstructionType.CLAUDE_MD
-        return listOfNotNull(InstructionFileSupport.source(file, InstructionScope.GLOBAL, agentId, type))
-    }
+    override fun discoverGlobal(): List<InstructionSource> =
+        InstructionFileSupport.globalAgentsOrClaude(globalFiles, globalClaudeFile, agentId)
 
-    override fun discoverProject(project: DiscoveredProject): List<InstructionSource> {
-        val projectRoot = InstructionFileSupport.projectRoot(project) ?: return emptyList()
-        return InstructionFileSupport.scan(projectRoot) { _, file ->
-            val fileName = file.fileName.toString()
-            fileName == AGENTS_FILE || fileName == CLAUDE_FILE
-        }.mapNotNull { file ->
-            val isAgents = file.fileName.toString() == AGENTS_FILE
-            val shadowed = !isAgents && isSubstantial(file.resolveSibling(AGENTS_FILE))
-            InstructionFileSupport.source(
-                path = file,
-                scope = InstructionScope.PROJECT,
-                agentId = agentId,
-                type = if (isAgents) InstructionType.AGENTS_MD else InstructionType.CLAUDE_MD,
-                projectName = project.name,
-                note = SHADOWED_NOTE.takeIf { shadowed },
-            )
-        }
-    }
+    override fun discoverProject(project: DiscoveredProject): List<InstructionSource> =
+        InstructionFileSupport.projectAgentsAndClaude(project, agentId, SHADOWED_NOTE, ::isSubstantial)
 
     private fun isNonEmptyFile(path: Path): Boolean =
         Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) &&
@@ -61,13 +41,20 @@ class MimoInstructionProvider(
     /** An `AGENTS.md` with at least [FALLBACK_MAX_CHARACTERS] characters (trimmed): enough that MiMo ignores `CLAUDE.md`. */
     private fun isSubstantial(path: Path): Boolean =
         Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) &&
-            runCatching { Files.readString(path).trim().length >= FALLBACK_MAX_CHARACTERS }.getOrDefault(false)
+            runCatching {
+                // A bounded prefix decides it: enough non-blank characters in the first chunk already exceed the threshold.
+                Files.newBufferedReader(path).use { reader ->
+                    val buffer = CharArray(FALLBACK_READ_CHARACTERS)
+                    String(buffer, 0, maxOf(0, reader.read(buffer))).trim().length >= FALLBACK_MAX_CHARACTERS
+                }
+            }.getOrDefault(false)
 
     private companion object {
         const val AGENT_ID = "mimo"
         const val AGENTS_FILE = "AGENTS.md"
         const val CLAUDE_FILE = "CLAUDE.md"
         const val FALLBACK_MAX_CHARACTERS = 500
+        const val FALLBACK_READ_CHARACTERS = 64 * 1024
         const val SHADOWED_NOTE =
             "Not used by MiMo Code: it reads CLAUDE.md only when no AGENTS.md exists in the same directory or that AGENTS.md is shorter than 500 characters."
     }

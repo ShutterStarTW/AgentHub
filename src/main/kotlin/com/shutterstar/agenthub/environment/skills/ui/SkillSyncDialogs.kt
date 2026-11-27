@@ -350,75 +350,38 @@ internal class SkillBulkMigrationDialog(
     candidates: List<BulkMigrationCandidate>,
     private val reviewPlan: Boolean = true,
 ) : DialogWrapper(project, true) {
-    private class Entry(val candidate: BulkMigrationCandidate, val box: JCheckBox)
-
-    private val entries = candidates.map { candidate ->
-        Entry(candidate, JCheckBox(candidate.skill.name, true).apply { font = font.deriveFont(Font.BOLD) })
-    }
-    private val countLabel = JBLabel().apply { foreground = JBColor.GRAY }
+    private val list = SkillSelectionList(
+        items = candidates,
+        label = { it.skill.name },
+        description = { it.skill.description },
+        details = ::detailsOf,
+        onChange = ::updateSummary,
+    )
 
     val selectedCandidates: List<BulkMigrationCandidate>
-        get() = entries.filter { it.box.isSelected }.map { it.candidate }
+        get() = list.selected
 
     init {
         title = "Migrate Duplicate Skills"
-        entries.forEach { it.box.addItemListener { updateSummary() } }
         updateSummary()
         init()
     }
 
     private fun updateSummary() {
-        val selected = entries.count { it.box.isSelected }
-        countLabel.text = "$selected of ${entries.size} selected"
+        val selected = list.selectedCount
         // With plan review on, the next step is the by-directory plan; otherwise OK applies the selection.
         setOKButtonText(if (reviewPlan) "Review Plan" else if (selected == 1) "Migrate 1 Skill" else "Migrate $selected Skills")
         isOKActionEnabled = selected > 0
     }
 
-    private fun setAll(selected: Boolean) = entries.forEach { it.box.isSelected = selected }
+    override fun createCenterPanel(): JComponent = list.createPanel(
+        "<html><body style='width: ${JBUI.scale(DIALOG_ROW_WIDTH)}px'>These skills exist as identical copies in " +
+            "several agents. Migrating moves one copy into the shared folder and links the other agents to it. " +
+            "Existing content is backed up first, and one failing skill does not stop the rest.</body></html>",
+    )
 
-    override fun createCenterPanel(): JComponent = JPanel(BorderLayout(0, JBUI.scale(AgentHubUiComponents.CONTROL_GAP))).apply {
-        border = JBUI.Borders.empty(AgentHubUiComponents.PANEL_INSET)
-        val top = JPanel(BorderLayout(0, JBUI.scale(AgentHubUiComponents.CONTROL_GAP)))
-        top.add(
-            JBLabel(
-                "<html><body style='width: ${JBUI.scale(DIALOG_ROW_WIDTH)}px'>These skills exist as identical copies in " +
-                    "several agents. Migrating moves one copy into the shared folder and links the other agents to it. " +
-                    "Existing content is backed up first, and one failing skill does not stop the rest.</body></html>",
-            ),
-            BorderLayout.NORTH,
-        )
-        top.add(
-            JPanel(BorderLayout()).apply {
-                add(
-                    JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(AgentHubUiComponents.CONTROL_GAP), 0)).apply {
-                        add(com.intellij.ui.components.ActionLink("Select all") { setAll(true) })
-                        add(com.intellij.ui.components.ActionLink("Clear") { setAll(false) })
-                    },
-                    BorderLayout.WEST,
-                )
-                add(countLabel, BorderLayout.EAST)
-            },
-            BorderLayout.SOUTH,
-        )
-        add(top, BorderLayout.NORTH)
-        val list = AgentHubUiComponents.verticalBox()
-        entries.forEachIndexed { index, entry ->
-            if (index > 0) list.add(AgentHubUiComponents.detailDivider())
-            list.add(entryRow(entry))
-        }
-        add(
-            JBScrollPane(JPanel(BorderLayout()).apply { add(list, BorderLayout.NORTH) }).apply {
-                border = JBUI.Borders.customLine(JBColor.border())
-                preferredSize = Dimension(JBUI.scale(DIALOG_ROW_WIDTH + 40), JBUI.scale(300))
-            },
-            BorderLayout.CENTER,
-        )
-    }
-
-    /** Skill name, its description, and what happens: which copy moves to the shared folder and who gets linked. */
-    private fun entryRow(entry: Entry): JComponent {
-        val candidate = entry.candidate
+    /** What happens to one skill: which copy moves to the shared folder and who gets linked. */
+    private fun detailsOf(candidate: BulkMigrationCandidate): List<JComponent> {
         val promote = candidate.requests.filterIsInstance<SkillSyncRequest.PromoteSkill>().firstOrNull()
         val linked = candidate.requests.filterIsInstance<SkillSyncRequest.ShareSkill>().map { it.targetAgentId }
         val fallback = candidate.skill.sources.mapNotNull { it.agentId }.distinct().sorted()
@@ -426,19 +389,8 @@ internal class SkillBulkMigrationDialog(
         // Only agents the plan really links. The agents that merely list the same folder (Cursor, Kilo… read
         // ~/.claude/skills) are not linked and must not be shown or warned about.
         val linkedIds = linked
-        return JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            alignmentX = JComponent.LEFT_ALIGNMENT
-            border = JBUI.Borders.empty(0, AgentHubUiComponents.CONTROL_GAP)
-            add(entry.box.apply { alignmentX = JComponent.LEFT_ALIGNMENT })
-            val indent = JBUI.Borders.emptyLeft(INDENT)
-            candidate.skill.description?.takeIf(String::isNotBlank)?.let { description ->
-                add(AgentHubUiComponents.singleLineText(description.lineSequence().first().take(160), DIALOG_ROW_WIDTH).apply {
-                    foreground = JBColor.GRAY
-                    border = indent
-                    alignmentX = JComponent.LEFT_ALIGNMENT
-                })
-            }
+        val indent = JBUI.Borders.emptyLeft(INDENT)
+        return buildList {
             source?.let { add(agentLine("Moves to shared from", listOf(it), indent)) }
             if (linkedIds.isNotEmpty()) add(agentLine("Then linked for", linkedIds, indent))
             // A vendor-provided copy can be moved or replaced by a link; say so, as the single-skill dialogs do.
@@ -482,7 +434,7 @@ internal class SkillBulkMigrationDialog(
         if (selectedCandidates.isEmpty()) ValidationInfo("Select at least one skill.") else null
 
     private companion object {
-        const val INDENT = 24
+        const val INDENT = SkillSelectionList.INDENT
     }
 }
 
@@ -492,112 +444,61 @@ internal class SkillRedundantCopyDialog(
     work: List<RedundantCopyWork>,
     private val reviewPlan: Boolean = true,
 ) : DialogWrapper(project, true) {
-    private class Entry(val work: RedundantCopyWork, val box: JCheckBox)
-
-    private val entries = work.map { item ->
-        val where = if (item.context.scope == SkillScope.PROJECT) item.context.project?.let { " (${it.name})" }.orEmpty() else ""
-        Entry(item, JCheckBox(item.candidate.skill.name + where, true).apply { font = font.deriveFont(Font.BOLD) })
-    }
-    private val countLabel = JBLabel().apply { foreground = JBColor.GRAY }
+    private val list = SkillSelectionList(
+        items = work,
+        label = { item ->
+            val where = if (item.context.scope == SkillScope.PROJECT) item.context.project?.let { " (${it.name})" }.orEmpty() else ""
+            item.candidate.skill.name + where
+        },
+        description = { it.candidate.skill.description },
+        details = ::detailsOf,
+        onChange = ::updateSummary,
+    )
 
     val selectedWork: List<RedundantCopyWork>
-        get() = entries.filter { it.box.isSelected }.map { it.work }
+        get() = list.selected
 
     init {
         title = "Clean Up Redundant Copies"
-        entries.forEach { it.box.addItemListener { updateSummary() } }
         updateSummary()
         init()
     }
 
     private fun updateSummary() {
-        val selected = entries.count { it.box.isSelected }
-        countLabel.text = "$selected of ${entries.size} selected"
+        val selected = list.selectedCount
         setOKButtonText(if (reviewPlan) "Review Plan" else if (selected == 1) "Clean Up 1 Skill" else "Clean Up $selected Skills")
         isOKActionEnabled = selected > 0
     }
 
-    private fun setAll(selected: Boolean) = entries.forEach { it.box.isSelected = selected }
+    override fun createCenterPanel(): JComponent = list.createPanel(
+        "<html><body style='width: ${JBUI.scale(DIALOG_ROW_WIDTH)}px'>These skills are already shared. A link is only unlinked (the shared skill is never touched), a copy is " +
+            "removed after a backup, and an identical copy of an agent that cannot read the shared folder is replaced by a link. " +
+            "Copies that differ are never touched.</body></html>",
+    )
 
-    override fun createCenterPanel(): JComponent = JPanel(BorderLayout(0, JBUI.scale(AgentHubUiComponents.CONTROL_GAP))).apply {
-        border = JBUI.Borders.empty(AgentHubUiComponents.PANEL_INSET)
-        val top = JPanel(BorderLayout(0, JBUI.scale(AgentHubUiComponents.CONTROL_GAP)))
-        top.add(
-            JBLabel(
-                "<html><body style='width: ${JBUI.scale(DIALOG_ROW_WIDTH)}px'>These skills are already shared. A link is only unlinked (the shared skill is never touched), a copy is " +
-                    "removed after a backup, and an identical copy of an agent that cannot read the shared folder is replaced by a link. " +
-                    "Copies that differ are never touched.</body></html>",
-            ),
-            BorderLayout.NORTH,
-        )
-        top.add(
-            JPanel(BorderLayout()).apply {
-                add(
-                    JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(AgentHubUiComponents.CONTROL_GAP), 0)).apply {
-                        add(com.intellij.ui.components.ActionLink("Select all") { setAll(true) })
-                        add(com.intellij.ui.components.ActionLink("Clear") { setAll(false) })
-                    },
-                    BorderLayout.WEST,
-                )
-                add(countLabel, BorderLayout.EAST)
-            },
-            BorderLayout.SOUTH,
-        )
-        add(top, BorderLayout.NORTH)
-        val list = AgentHubUiComponents.verticalBox()
-        entries.forEachIndexed { index, entry ->
-            if (index > 0) list.add(AgentHubUiComponents.detailDivider())
-            list.add(entryRow(entry))
-        }
-        add(
-            JBScrollPane(JPanel(BorderLayout()).apply { add(list, BorderLayout.NORTH) }).apply {
-                border = JBUI.Borders.customLine(JBColor.border())
-                preferredSize = Dimension(JBUI.scale(DIALOG_ROW_WIDTH + 40), JBUI.scale(300))
-            },
-            BorderLayout.CENTER,
-        )
-    }
-
-    private fun entryRow(entry: Entry): JComponent = JPanel().apply {
-        layout = BoxLayout(this, BoxLayout.Y_AXIS)
-        alignmentX = JComponent.LEFT_ALIGNMENT
-        border = JBUI.Borders.empty(0, AgentHubUiComponents.CONTROL_GAP)
-        add(entry.box.apply { alignmentX = JComponent.LEFT_ALIGNMENT })
-        entry.work.candidate.skill.description?.takeIf(String::isNotBlank)?.let { description ->
-            add(AgentHubUiComponents.singleLineText(description.lineSequence().first().take(160), DIALOG_ROW_WIDTH).apply {
-                foreground = JBColor.GRAY
-                border = JBUI.Borders.emptyLeft(INDENT)
-                alignmentX = JComponent.LEFT_ALIGNMENT
-            })
-        }
-        add(
-            JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(AgentHubUiComponents.CONTROL_GAP), 0, JBUI.scale(DIALOG_ROW_WIDTH))).apply {
-                alignmentX = JComponent.LEFT_ALIGNMENT
-                isOpaque = false
-                border = JBUI.Borders.emptyLeft(INDENT)
-                // Said exactly: a link is only unlinked, a copy is a real folder that is removed (after a backup).
-                val (linked, copies) = entry.work.candidate.agentIds.partition { it in entry.work.candidate.linkedAgentIds }
-                listOf(
-                    "Removes the link in" to linked,
-                    "Removes the copy in" to copies,
-                    "Replaces the copy with a link in" to entry.work.candidate.convertAgentIds,
-                ).forEach { (caption, ids) ->
-                    if (ids.isEmpty()) return@forEach
-                    add(JBLabel(caption).apply { foreground = JBColor.GRAY })
-                    ids.forEach { id ->
-                        add(JLabel(AgentHubUiComponents.displayName(id), AgentHubUiComponents.faviconFor(id), JLabel.LEADING))
-                    }
+    private fun detailsOf(work: RedundantCopyWork): List<JComponent> = listOf(
+        JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(AgentHubUiComponents.CONTROL_GAP), 0, JBUI.scale(DIALOG_ROW_WIDTH))).apply {
+            alignmentX = JComponent.LEFT_ALIGNMENT
+            isOpaque = false
+            border = JBUI.Borders.emptyLeft(SkillSelectionList.INDENT)
+            // Said exactly: a link is only unlinked, a copy is a real folder that is removed (after a backup).
+            val (linked, copies) = work.candidate.agentIds.partition { it in work.candidate.linkedAgentIds }
+            listOf(
+                "Removes the link in" to linked,
+                "Removes the copy in" to copies,
+                "Replaces the copy with a link in" to work.candidate.convertAgentIds,
+            ).forEach { (caption, ids) ->
+                if (ids.isEmpty()) return@forEach
+                add(JBLabel(caption).apply { foreground = JBColor.GRAY })
+                ids.forEach { id ->
+                    add(JLabel(AgentHubUiComponents.displayName(id), AgentHubUiComponents.faviconFor(id), JLabel.LEADING))
                 }
-            },
-        )
-    }
+            }
+        },
+    )
 
     override fun doValidate(): ValidationInfo? =
         if (selectedWork.isEmpty()) ValidationInfo("Select at least one skill.") else null
-
-    private companion object {
-        const val INDENT = 24
-    }
 }
 
 /** Picks one on-disk backup to restore; the confirmation copy updates as the selection changes. */

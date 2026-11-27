@@ -107,18 +107,25 @@ internal class SkillSyncOperationRunner(
             project,
             backupRoot,
         )
-        auditTrail.record(
-            SyncAuditEntry(
-                operationId = result.plan.operationId,
-                timestamp = now(),
-                skillId = result.planningRequest.skillId,
-                action = result.action,
-                affectedAgents = result.planningRequest.targets.map { it.agentId }.toSet(),
-                result = syncResult.status,
-                instanceKey = result.planningRequest.instanceKey,
-            ),
+        val recorded = runCatching {
+            auditTrail.record(
+                SyncAuditEntry(
+                    operationId = result.plan.operationId,
+                    timestamp = now(),
+                    skillId = result.planningRequest.skillId,
+                    action = result.action,
+                    affectedAgents = result.planningRequest.targets.map { it.agentId }.toSet(),
+                    result = syncResult.status,
+                    instanceKey = result.planningRequest.instanceKey,
+                ),
+            )
+        }.isSuccess
+        if (recorded) return syncResult
+        // The files already changed: keep the result and report the missing history entry instead of failing the operation.
+        return syncResult.copy(
+            status = if (syncResult.status == SyncOperationStatus.SUCCESS) SyncOperationStatus.PARTIAL_SUCCESS else syncResult.status,
+            errors = syncResult.errors + SyncError(null, "Changes were applied, but the history entry could not be saved."),
         )
-        return syncResult
     }
 
     /** Read-only: every backup on disk for this skill instance, most recent first. */

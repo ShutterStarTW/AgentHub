@@ -139,6 +139,70 @@ class UsagePanelTest {
     }
 
     @Test
+    fun shouldNotCacheASupersededRunOrOneThatFinishedInAnotherPartition() {
+        val pendingTasks = mutableListOf<Runnable>()
+        val recorded = mutableListOf<UsageDiscoveryResult>()
+        var partition = "host"
+        val controller = UsageController(
+            executor = { pendingTasks += it },
+            deliver = { it() },
+            discover = { UsageDiscoveryResult(emptyList(), refreshedAt = now, liveEnabled = true) },
+            cached = { emptyList<AgentUsageSnapshot>() to null },
+            recordCache = { recorded += it },
+            isLiveEnabled = { true },
+            onStateChanged = {},
+            partition = { partition },
+        )
+
+        controller.refresh(emptyList(), force = true)
+        controller.refresh(emptyList(), force = true)
+        pendingTasks.removeAt(0).run()
+        assertEquals(0, recorded.size)
+
+        partition = "wsl-Ubuntu"
+        pendingTasks.removeAt(0).run()
+        assertEquals(0, recorded.size)
+
+        partition = "host"
+        controller.refresh(emptyList(), force = true)
+        pendingTasks.removeAt(0).run()
+        assertEquals(1, recorded.size)
+    }
+
+    @Test
+    fun shouldClearLocalSummaryOfAnAgentWithoutSessionsDuringTheLiveCooldown() {
+        var currentTime = now
+        val pendingTasks = mutableListOf<Runnable>()
+        val states = mutableListOf<UsageControllerState>()
+        val summary = LocalUsageSummary()
+        val live = AgentUsageSnapshot(
+            agentId = "claude",
+            status = UsageStatus.OK,
+            sourceKind = UsageSourceKind.LIVE_API,
+            windows = listOf(UsageWindow("five_hour", "5-hour window", UsageWindowKind.ROLLING, 20.0)),
+            localSummary = summary,
+        )
+        val controller = UsageController(
+            executor = { pendingTasks += it },
+            deliver = { it() },
+            discover = { UsageDiscoveryResult(listOf(live), refreshedAt = currentTime, liveEnabled = true) },
+            cached = { emptyList<AgentUsageSnapshot>() to null },
+            recordCache = {},
+            isLiveEnabled = { true },
+            now = { currentTime },
+            onStateChanged = { states += it },
+        )
+        controller.refresh(emptyList(), force = true)
+        pendingTasks.removeAt(0).run()
+        assertEquals(summary, states.last().snapshots.single().localSummary)
+
+        currentTime = now.plusSeconds(10)
+        controller.refresh(emptyList())
+
+        assertEquals(null, states.last().snapshots.single().localSummary)
+    }
+
+    @Test
     fun shouldRespectLiveCooldownForAutomaticRefreshesButAllowForcedRefresh() {
         var currentTime = now
         var discoverCalls = 0

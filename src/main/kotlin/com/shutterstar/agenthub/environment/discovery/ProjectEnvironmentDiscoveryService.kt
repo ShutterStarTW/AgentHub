@@ -14,6 +14,7 @@ import com.shutterstar.agenthub.environment.persistence.EnvironmentIndexService
 import com.shutterstar.agenthub.environment.skills.discovery.SkillDiscoveryService
 import com.shutterstar.agenthub.environment.skills.discovery.SkillSourceRecord
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
+import com.shutterstar.agenthub.projects.model.ProjectPathResolver
 import java.util.LinkedHashMap
 import java.util.concurrent.TimeUnit
 import java.util.logging.Logger
@@ -29,6 +30,8 @@ class ProjectEnvironmentDiscoveryService(
     private val isAgentVisible: (String) -> Boolean = { true },
     private val nowNanos: () -> Long = System::nanoTime,
     private val configDiscovery: ConfigDiscoveryService = ConfigDiscoveryService(isAgentVisible = isAgentVisible),
+    /** The cache partition (host or WSL distro): a discovery that straddles a switch must not be persisted into the new one. */
+    private val partition: () -> String = { "" },
 ) {
     private val cache = object : LinkedHashMap<CacheKey, CachedEnvironment>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<CacheKey, CachedEnvironment>): Boolean =
@@ -53,11 +56,21 @@ class ProjectEnvironmentDiscoveryService(
         }
         cacheSnapshot.environment?.let { return it }
 
+        val startPartition = partition()
         val global = globalRecords()
-        val (skillRecords, skillWarnings) = skillDiscovery.discoverProjectRecordsWithWarnings(project)
-        val (mcpRecords, mcpWarnings) = mcpDiscovery.discoverProjectRecordsWithWarnings(project)
-        val (instructionRecords, instructionWarnings) = instructionDiscovery.discoverProjectRecordsWithWarnings(project)
-        val (configRecords, configWarnings) = configDiscovery.discoverProjectRecordsWithWarnings(project)
+        // One walk of the project tree per budget family for all providers of this discovery (they run on this thread).
+        val projectRecords = ProjectScanScope.run(ProjectPathResolver.resolveExistingRoot(project)) {
+            ProjectRecords(
+                skillDiscovery.discoverProjectRecordsWithWarnings(project),
+                mcpDiscovery.discoverProjectRecordsWithWarnings(project),
+                instructionDiscovery.discoverProjectRecordsWithWarnings(project),
+                configDiscovery.discoverProjectRecordsWithWarnings(project),
+            )
+        }
+        val (skillRecords, skillWarnings) = projectRecords.skills
+        val (mcpRecords, mcpWarnings) = projectRecords.mcp
+        val (instructionRecords, instructionWarnings) = projectRecords.instructions
+        val (configRecords, configWarnings) = projectRecords.configs
         val environment = ProjectEnvironment(
             projectId = project.identity.id,
             agentIds = agentIds,
@@ -80,7 +93,7 @@ class ProjectEnvironmentDiscoveryService(
                 ).filter { warning -> warning.agentId == null || warning.agentId in agentIds },
         )
         val shouldPersist = synchronized(cache) {
-            if (cacheSnapshot.generation == cacheGeneration && environment.warnings.none { it.capability != "config" || it.message.startsWith("Discovery failed:") }) {
+            if (cacheSnapshot.generation == cacheGeneration && partition() == startPartition && environment.warnings.none { it.capability != "config" || it.message.startsWith("Discovery failed:") }) {
                 cache[cacheKey] = CachedEnvironment(environment, nowNanos())
                 true
             } else {
@@ -177,6 +190,13 @@ class ProjectEnvironmentDiscoveryService(
         val instructions: List<InstructionSource>,
         val configs: List<AgentConfigSource>,
         val warnings: List<EnvironmentWarning>,
+    )
+
+    private data class ProjectRecords(
+        val skills: Pair<List<SkillSourceRecord>, List<EnvironmentWarning>>,
+        val mcp: Pair<List<RawMcpServer>, List<EnvironmentWarning>>,
+        val instructions: Pair<List<InstructionSource>, List<EnvironmentWarning>>,
+        val configs: Pair<List<AgentConfigSource>, List<EnvironmentWarning>>,
     )
 
     private data class CachedEnvironment(val environment: ProjectEnvironment, val createdAtNanos: Long)

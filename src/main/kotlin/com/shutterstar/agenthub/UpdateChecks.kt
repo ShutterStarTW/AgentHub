@@ -126,11 +126,21 @@ class HttpLatestVersionFetcher(private val timeout: Duration = Duration.ofSecond
 /** Includes the process exit status so query failure cannot masquerade as an empty report. */
 data class CommandOutput(val output: String, val exitCode: Int?)
 
+/** What the check learned about one installed agent; the versions are display text, null when not known. */
+data class AgentUpdateInfo(
+    val agentId: String,
+    val status: UpdateStatus,
+    val installedVersion: String? = null,
+    val latestVersion: String? = null,
+)
+
 data class UpdateOutcome(
     /** Installed agents with a newer version available. */
     val outdated: List<String>,
     /** Installed agents whose update status could not be determined (no source, unparsable version, lookup failed). */
     val unverified: List<String>,
+    /** One entry per checked agent, in the order of the checked list. */
+    val details: List<AgentUpdateInfo> = emptyList(),
 )
 
 /**
@@ -150,53 +160,75 @@ class UpdateChecker(
 ) {
     private fun report(command: String): CommandOutput =
         runCommandResult?.invoke(command) ?: CommandOutput(runCommand(command), null)
-    fun check(agents: List<CodingAgent>): UpdateOutcome {
+
+    /**
+     * [collectInstalledVersions] also runs `<command> --version` for the agents that otherwise need no version
+     * command (no source, self-updating), so a report can show their version; it never changes a status.
+     */
+    fun check(agents: List<CodingAgent>, collectInstalledVersions: Boolean = false): UpdateOutcome {
         val sources = agents.associate { it.id to it.resolvedVersionSource }
         val npmAgents = agents.filter { sources[it.id]?.kind == VersionSource.Kind.NPM }
         val pypiAgents = agents.filter { sources[it.id]?.kind == VersionSource.Kind.PYPI }
 
-        val npmInstalled = if (npmAgents.isEmpty()) emptySet() else npmInstalledNames(report("npm ls -g --depth=0 --json"))
+        val npmInstalledVersions = if (npmAgents.isEmpty()) emptyMap() else npmInstalledVersions(report("npm ls -g --depth=0 --json"))
+        val npmInstalled = npmInstalledVersions.keys
         val npmManaged = npmAgents.any { sources[it.id]?.id in npmInstalled }
-        val npmOutdated = if (npmManaged) npmOutdatedNames(report("npm outdated -g --json")) else emptySet()
+        val npmOutdatedLatest = if (npmManaged) npmOutdatedLatest(report("npm outdated -g --json")) else emptyMap()
+        val npmOutdated = npmOutdatedLatest?.keys
 
-        val pipInstalled = if (pypiAgents.isEmpty()) emptySet() else pipNames(report("pip list --format=json")).orEmpty()
+        val pipInstalledVersions = if (pypiAgents.isEmpty()) emptyMap() else pipVersions(report("pip list --format=json"), "version").orEmpty()
+        val pipInstalled = pipInstalledVersions.keys
         val pipManaged = pypiAgents.any { sources[it.id]?.id in pipInstalled }
-        val pipOutdated = if (pipManaged) pipNames(report("pip list --outdated --format=json")) else emptySet()
+        val pipOutdatedLatest = if (pipManaged) pipVersions(report("pip list --outdated --format=json"), "latest_version") else emptyMap()
+        val pipOutdated = pipOutdatedLatest?.keys
 
         val pool = Executors.newFixedThreadPool(minOf(maxOf(agents.size, 1), 8))
         try {
             val futures = agents.map { agent ->
                 val source = sources[agent.id]
                 agent to pool.submit(Callable {
+                    fun versionOnRequest(): String? =
+                        if (collectInstalledVersions) firstLine(runCommand("${agent.command} ${agent.versionArgs}".trim())) else null
                     when {
-                        source == null -> UpdateStatus.UNKNOWN
-                        source.kind == VersionSource.Kind.NPM && source.id in npmInstalled ->
-                            if (npmOutdated == null) UpdateStatus.UNKNOWN else if (source.id in npmOutdated) UpdateStatus.OUTDATED else UpdateStatus.CURRENT
-                        source.kind == VersionSource.Kind.PYPI && source.id in pipInstalled ->
-                            if (pipOutdated == null) UpdateStatus.UNKNOWN else if (source.id in pipOutdated) UpdateStatus.OUTDATED else UpdateStatus.CURRENT
-                        agent.selfUpdating -> UpdateStatus.UNKNOWN
-                        else -> classifyVersions(
-                            runCommand("${agent.command} ${agent.versionArgs}".trim()),
-                            fetcher.latest(source),
+                        source == null -> AgentUpdateInfo(agent.id, UpdateStatus.UNKNOWN, versionOnRequest())
+                        source.kind == VersionSource.Kind.NPM && source.id in npmInstalled -> AgentUpdateInfo(
+                            agent.id,
+                            if (npmOutdated == null) UpdateStatus.UNKNOWN else if (source.id in npmOutdated) UpdateStatus.OUTDATED else UpdateStatus.CURRENT,
+                            npmInstalledVersions[source.id],
+                            npmOutdatedLatest?.get(source.id),
                         )
+                        source.kind == VersionSource.Kind.PYPI && source.id in pipInstalled -> AgentUpdateInfo(
+                            agent.id,
+                            if (pipOutdated == null) UpdateStatus.UNKNOWN else if (source.id in pipOutdated) UpdateStatus.OUTDATED else UpdateStatus.CURRENT,
+                            pipInstalledVersions[source.id],
+                            pipOutdatedLatest?.get(source.id),
+                        )
+                        agent.selfUpdating -> AgentUpdateInfo(agent.id, UpdateStatus.UNKNOWN, versionOnRequest())
+                        else -> {
+                            val installedOutput = runCommand("${agent.command} ${agent.versionArgs}".trim())
+                            val latest = fetcher.latest(source)
+                            AgentUpdateInfo(agent.id, classifyVersions(installedOutput, latest), firstLine(installedOutput), latest)
+                        }
                     }
                 })
             }
             val outdated = mutableListOf<String>()
             val unverified = mutableListOf<String>()
+            val details = mutableListOf<AgentUpdateInfo>()
             futures.forEach { (agent, future) ->
-                val status = try {
+                val info = try {
                     future.get()
                 } catch (_: ExecutionException) {
-                    UpdateStatus.UNKNOWN
+                    AgentUpdateInfo(agent.id, UpdateStatus.UNKNOWN)
                 }
-                when (status) {
+                details += info
+                when (info.status) {
                     UpdateStatus.OUTDATED -> outdated += agent.id
                     UpdateStatus.UNKNOWN -> unverified += agent.id
                     UpdateStatus.CURRENT -> Unit
                 }
             }
-            return UpdateOutcome(outdated, unverified)
+            return UpdateOutcome(outdated, unverified, details)
         } finally {
             pool.shutdownNow()
         }
@@ -213,35 +245,47 @@ class UpdateChecker(
         return root.takeUnless { "error" in it.fields || "errors" in it.fields }
     }
 
-    private fun npmInstalledNames(result: CommandOutput): Set<String> {
-        val root = npmObject(result) ?: return emptySet()
+    /** Installed global packages with their `version` (null when the entry has none). */
+    private fun npmInstalledVersions(result: CommandOutput): Map<String, String?> {
+        val root = npmObject(result) ?: return emptyMap()
         val dependencies = root.fields["dependencies"]
-            as? JsonObject ?: return emptySet()
-        return dependencies.fields.filterValues {
-            it is JsonObject
-        }.keys
+            as? JsonObject ?: return emptyMap()
+        return dependencies.fields.filterValues { it is JsonObject }
+            .mapValues { (_, entry) -> stringField(entry as JsonObject, "version") }
     }
 
-    private fun npmOutdatedNames(result: CommandOutput): Set<String>? {
+    /** Outdated global packages with their `latest` version; null when the report is unusable. */
+    private fun npmOutdatedLatest(result: CommandOutput): Map<String, String?>? {
         val root = npmObject(result) ?: return null
         if (root.fields.values.any { it !is JsonObject }) return null
-        return root.fields.keys
+        return root.fields.mapValues { (_, entry) -> stringField(entry as JsonObject, "latest") }
     }
 
-    private fun pipNames(result: CommandOutput): Set<String>? {
+    private fun stringField(entry: JsonObject, key: String): String? =
+        (entry.fields[key] as? JsonString)?.value?.takeIf(String::isNotBlank)
+
+    private fun firstLine(output: String?): String? =
+        output?.lineSequence()?.map(String::trim)?.firstOrNull(String::isNotEmpty)?.take(MAX_VERSION_TEXT)
+
+    /** Normalized package name to the value of [valueKey]; null when the report is unusable. */
+    private fun pipVersions(result: CommandOutput, valueKey: String): Map<String, String?>? {
         if (result.exitCode != null && result.exitCode != 0) return null
         val text = result.output.trim()
         val start = text.indexOf('[')
         if (start < 0) return null
         val array = SafeJsonParser.parse(text.substring(start))
             as? JsonArray ?: return null
-        val names = mutableSetOf<String>()
+        val names = linkedMapOf<String, String?>()
         for (entry in array.values) {
             val name = ((entry as? JsonObject)
                 ?.fields?.get("name") as? JsonString)
                 ?.value?.takeIf(String::isNotBlank) ?: return null
-            names += VersionSource.normalizePypiName(name)
+            names[VersionSource.normalizePypiName(name)] = stringField(entry as JsonObject, valueKey)
         }
         return names
+    }
+
+    private companion object {
+        const val MAX_VERSION_TEXT = 120
     }
 }

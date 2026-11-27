@@ -229,14 +229,7 @@ class ClineSqliteReader(
         )
     }
 
-    private fun decodeHex(value: String): String? {
-        if (value.length % 2 != 0) return null
-        val bytes = ByteArray(value.length / 2)
-        for (index in bytes.indices) {
-            bytes[index] = (value.substring(index * 2, index * 2 + 2).toIntOrNull(16) ?: return null).toByte()
-        }
-        return bytes.toString(Charsets.UTF_8)
-    }
+    private fun decodeHex(value: String): String? = SqliteCli.decodeHex(value)
 
     companion object {
         private const val DEFAULT_TIMEOUT_MILLIS = 10_000L

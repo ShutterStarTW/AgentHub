@@ -2,6 +2,8 @@ package com.shutterstar.agenthub.environment.instructions.discovery
 
 import com.shutterstar.agenthub.ScanBudget
 import com.shutterstar.agenthub.environment.discovery.PROJECT_WALK_EXCLUDED_DIRECTORY_NAMES
+import com.shutterstar.agenthub.environment.discovery.ProjectScanScope
+import com.shutterstar.agenthub.environment.discovery.ProjectWalkStats
 import com.shutterstar.agenthub.environment.instructions.model.InstructionScope
 import com.shutterstar.agenthub.environment.instructions.model.InstructionSource
 import com.shutterstar.agenthub.environment.instructions.model.InstructionType
@@ -38,13 +40,60 @@ internal object InstructionFileSupport {
         )
     }
 
+    /** AGENTS.md-first agents (Kilo, MiMo): the first non-empty global AGENTS.md, else the Claude Code file. */
+    fun globalAgentsOrClaude(globalAgentsFiles: List<Path>, claudeFile: Path, agentId: String): List<InstructionSource> {
+        val agents = globalAgentsFiles.firstOrNull(::isNonEmptyRegularFile)
+        val type = if (agents != null) InstructionType.AGENTS_MD else InstructionType.CLAUDE_MD
+        return listOfNotNull(source(agents ?: claudeFile, InstructionScope.GLOBAL, agentId, type))
+    }
+
+    /** Every project AGENTS.md and CLAUDE.md; a CLAUDE.md whose sibling AGENTS.md wins ([agentsWins]) is listed with [shadowedNote]. */
+    fun projectAgentsAndClaude(
+        project: DiscoveredProject,
+        agentId: String,
+        shadowedNote: String,
+        agentsWins: (Path) -> Boolean,
+    ): List<InstructionSource> {
+        val projectRoot = projectRoot(project) ?: return emptyList()
+        return scan(projectRoot) { _, file ->
+            val fileName = file.fileName.toString()
+            fileName == "AGENTS.md" || fileName == "CLAUDE.md"
+        }.mapNotNull { file ->
+            val isAgents = file.fileName.toString() == "AGENTS.md"
+            val shadowed = !isAgents && agentsWins(file.resolveSibling("AGENTS.md"))
+            source(
+                path = file,
+                scope = InstructionScope.PROJECT,
+                agentId = agentId,
+                type = if (isAgents) InstructionType.AGENTS_MD else InstructionType.CLAUDE_MD,
+                projectName = project.name,
+                note = shadowedNote.takeIf { shadowed },
+            )
+        }
+    }
+
+    /**
+     * The regular, non-empty files below [root] that [matcher] accepts. With the default [budget] and inside a
+     * [ProjectScanScope] the tree is walked once for all providers; a custom budget always walks on its own.
+     */
     fun scan(
         root: Path,
-        budget: ScanBudget = newBudget(),
+        budget: ScanBudget? = null,
         matcher: (root: Path, file: Path) -> Boolean,
     ): List<Path> {
         if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        if (budget == null) {
+            ProjectScanScope.inventory(root, ProjectWalkStats.INSTRUCTION, MAXIMUM_DEPTH, MAXIMUM_ENTRIES, countExcluded = false)?.let { inventory ->
+                return inventory.entries
+                    .filter { !it.isDirectory && it.isRegularFile && it.size > 0L && matcher(root, it.path) }
+                    .map { it.path.toAbsolutePath().normalize() }
+                    .distinct()
+                    .sortedBy { it.toString().lowercase() }
+            }
+        }
+        val walkBudget = budget ?: newBudget()
         val matches = mutableListOf<Path>()
+        val budgetBefore = walkBudget.remaining()
         runCatching {
             Files.walkFileTree(
                 root,
@@ -55,7 +104,7 @@ internal object InstructionFileSupport {
                         if (directory != root && directory.fileName.toString().lowercase() in excludedDirectoryNames) {
                             return FileVisitResult.SKIP_SUBTREE
                         }
-                        return if (!budget.consume()) {
+                        return if (!walkBudget.consume()) {
                             FileVisitResult.TERMINATE
                         } else {
                             FileVisitResult.CONTINUE
@@ -66,7 +115,7 @@ internal object InstructionFileSupport {
                     override fun visitFileFailed(file: Path, exc: java.io.IOException): FileVisitResult = FileVisitResult.CONTINUE
 
                     override fun visitFile(file: Path, attributes: BasicFileAttributes): FileVisitResult {
-                        if (!budget.consume()) return FileVisitResult.TERMINATE
+                        if (!walkBudget.consume()) return FileVisitResult.TERMINATE
                         if (attributes.isRegularFile && attributes.size() > 0L && matcher(root, file)) {
                             matches.add(file.toAbsolutePath().normalize())
                         }
@@ -75,6 +124,7 @@ internal object InstructionFileSupport {
                 },
             )
         }
+        ProjectWalkStats.record(ProjectWalkStats.INSTRUCTION, budgetBefore - walkBudget.remaining())
         return matches.distinct().sortedBy { it.toString().lowercase() }
     }
 

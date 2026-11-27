@@ -320,17 +320,10 @@ internal class SkillSyncApplicationService(
         alwaysBackup = alwaysBackup,
     )
 
-    /** Every installed target at once - the "share everywhere" special case of [prepareShareToSelected]. */
-    fun prepareShareEverywhere(
-        skill: AgentSkill,
-        scope: SkillScope,
-        project: DiscoveredProject?,
-    ): PreparedSkillSync = prepareShareToSelected(skill, shareTargetIds().toSet(), scope, project)
-
     /**
      * Shares to exactly the given targets in one plan/execute (one operation id, one audit entry
      * covering every agent in [targetAgentIds]) - the primitive behind both the "Share with…"
-     * button's multi-select and [prepareShareEverywhere]/[prepareRetryFailedTargets].
+     * button's multi-select and [prepareRetryFailedTargets].
      */
     fun prepareShareToSelected(
         skill: AgentSkill,
@@ -526,19 +519,6 @@ internal class SkillSyncApplicationService(
         project,
     )
 
-    fun prepareRepair(
-        skill: AgentSkill,
-        targetAgentId: String,
-        scope: SkillScope,
-        project: DiscoveredProject?,
-    ): PreparedSkillSync = prepare(
-        SkillSyncRequest.RepairSkill(skill.identity.id, targetAgentId),
-        skill,
-        setOf(targetAgentId),
-        scope,
-        project,
-    )
-
     /** Repairs every agent [SkillSyncOperationRunner.managedTargetIds] currently reports as managed, in one plan. */
     fun prepareWholeSkillRepair(
         skill: AgentSkill,
@@ -653,6 +633,7 @@ internal class SkillSyncApplicationService(
         val skillId = prepared.planResult.plan.skillId
         val freshSkill = rediscoverForMigration(prepared.scope, prepared.project).firstOrNull { it.identity.id == skillId }
             ?: return copy(
+                status = SyncOperationStatus.PARTIAL_SUCCESS,
                 errors = errors + SyncError(null, "Promoted, but the skill could not be rediscovered to share it further; use Share with… manually."),
             )
         val shareResult = execute(prepareShareToSelected(freshSkill, prepared.alsoShareWith, prepared.scope, prepared.project))

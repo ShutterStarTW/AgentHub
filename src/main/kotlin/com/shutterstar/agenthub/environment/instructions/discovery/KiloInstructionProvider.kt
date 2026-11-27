@@ -27,31 +27,11 @@ class KiloInstructionProvider(
     )
     private val globalClaudeFile = homeDirectory.resolve(".claude").resolve(CLAUDE_FILE)
 
-    override fun discoverGlobal(): List<InstructionSource> {
-        val agents = globalFiles.firstOrNull(::isNonEmptyFile)
-        val file = agents ?: globalClaudeFile
-        val type = if (agents != null) InstructionType.AGENTS_MD else InstructionType.CLAUDE_MD
-        return listOfNotNull(InstructionFileSupport.source(file, InstructionScope.GLOBAL, agentId, type))
-    }
+    override fun discoverGlobal(): List<InstructionSource> =
+        InstructionFileSupport.globalAgentsOrClaude(globalFiles, globalClaudeFile, agentId)
 
-    override fun discoverProject(project: DiscoveredProject): List<InstructionSource> {
-        val projectRoot = InstructionFileSupport.projectRoot(project) ?: return emptyList()
-        return InstructionFileSupport.scan(projectRoot) { _, file ->
-            val fileName = file.fileName.toString()
-            fileName == AGENTS_FILE || fileName == CLAUDE_FILE
-        }.mapNotNull { file ->
-            val isAgents = file.fileName.toString() == AGENTS_FILE
-            val shadowed = !isAgents && isNonEmptyFile(file.resolveSibling(AGENTS_FILE))
-            InstructionFileSupport.source(
-                path = file,
-                scope = InstructionScope.PROJECT,
-                agentId = agentId,
-                type = if (isAgents) InstructionType.AGENTS_MD else InstructionType.CLAUDE_MD,
-                projectName = project.name,
-                note = SHADOWED_NOTE.takeIf { shadowed },
-            )
-        }
-    }
+    override fun discoverProject(project: DiscoveredProject): List<InstructionSource> =
+        InstructionFileSupport.projectAgentsAndClaude(project, agentId, SHADOWED_NOTE, ::isNonEmptyFile)
 
     private fun isNonEmptyFile(path: Path): Boolean =
         Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) &&

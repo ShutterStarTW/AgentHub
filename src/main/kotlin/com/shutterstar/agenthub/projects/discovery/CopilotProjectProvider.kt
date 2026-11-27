@@ -93,14 +93,13 @@ class CopilotProjectProvider(
         val sessionId = sessionDirectory.fileName?.toString()?.takeIf { it.isNotBlank() } ?: return null
         val workspace = sessionDirectory.resolve(WORKSPACE_FILE)
         if (!Files.isRegularFile(workspace, LinkOption.NOFOLLOW_LINKS)) return null
-        val projectPath = readYamlScalar(workspace, CWD_FIELD)
-            ?: readYamlScalar(workspace, GIT_ROOT_FIELD)
-            ?: return null
+        val fields = readYamlScalars(workspace, WORKSPACE_FIELDS)
+        val projectPath = fields[CWD_FIELD] ?: fields[GIT_ROOT_FIELD] ?: return null
         val events = sessionDirectory.resolve(EVENTS_FILE)
-        val startedAt = LocalSessionSupport.parseTimestamp(readYamlScalar(workspace, CREATED_AT_FIELD))
+        val startedAt = LocalSessionSupport.parseTimestamp(fields[CREATED_AT_FIELD])
         val updatedAt = latest(
             startedAt,
-            LocalSessionSupport.parseTimestamp(readYamlScalar(workspace, UPDATED_AT_FIELD)),
+            LocalSessionSupport.parseTimestamp(fields[UPDATED_AT_FIELD]),
             LocalSessionSupport.modifiedAt(workspace),
             LocalSessionSupport.modifiedAt(events),
         )
@@ -114,23 +113,23 @@ class CopilotProjectProvider(
             startedAt = startedAt,
             updatedAt = updatedAt,
             sourcePath = workspace.toAbsolutePath().normalize().toString(),
-            metadata = readYamlScalar(workspace, NAME_FIELD)?.let { mapOf(TITLE_FIELD to it) }.orEmpty() +
+            metadata = fields[NAME_FIELD]?.let { mapOf(TITLE_FIELD to it) }.orEmpty() +
                 prompts?.metadata().orEmpty(),
             statistics = statistics.snapshot(),
         )
     }
 
-    private fun readYamlScalar(file: Path, key: String): String? {
-        Files.newBufferedReader(file).useLines { lines ->
-            return lines
-                .take(MAX_WORKSPACE_LINES)
-                .mapNotNull { line ->
-                    val match = YAML_SCALAR.matchEntire(line) ?: return@mapNotNull null
-                    if (match.groupValues[1] != key) return@mapNotNull null
-                    match.groupValues[2].trim().trim('"', '\'').takeIf { it.isNotBlank() }
-                }
-                .firstOrNull()
+    /** One bounded pass over the workspace file; the first occurrence of each wanted key wins. */
+    private fun readYamlScalars(file: Path, keys: Set<String>): Map<String, String> {
+        val found = LinkedHashMap<String, String>()
+        LocalSessionSupport.scanHeaderLines(file, MAX_WORKSPACE_LINES, MAX_WORKSPACE_LINE_CHARACTERS) { line ->
+            val match = YAML_SCALAR.matchEntire(line)
+            if (match != null && match.groupValues[1] in keys && match.groupValues[1] !in found) {
+                match.groupValues[2].trim().trim('"', '\'').takeIf { it.isNotBlank() }?.let { found[match.groupValues[1]] = it }
+            }
+            found.size == keys.size
         }
+        return found
     }
 
     private fun discoverProjectDirectory(
@@ -229,6 +228,8 @@ class CopilotProjectProvider(
         private const val MAX_TOTAL_SESSION_ENTRIES = 50_000
         private const val MAX_SESSION_STATE_ENTRIES = 50_000
         private const val MAX_WORKSPACE_LINES = 128
+        private const val MAX_WORKSPACE_LINE_CHARACTERS = 8 * 1024
+        private val WORKSPACE_FIELDS = setOf(CWD_FIELD, GIT_ROOT_FIELD, CREATED_AT_FIELD, UPDATED_AT_FIELD, NAME_FIELD)
         private const val SESSION_ID_FIELD = "id"
         private const val WORKING_DIRECTORY_FIELD = "cwd"
         private const val TIMESTAMP_FIELD = "timestamp"

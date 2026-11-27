@@ -325,7 +325,7 @@ internal class SkillMutationController(
 
     /**
      * Refreshes a stale managed copy or recreates a broken managed link for one agent. This also
-     * covers what a separate "Repair" action would do — [SkillSyncApplicationService.prepareRepair]
+     * covers what a separate "Repair" action would do — [SkillSyncApplicationService.prepareWholeSkillRepair]
      * and [SkillSyncApplicationService.prepareResync] route through the exact same planning logic
      * for a single target agent, differing only in the audit/plan label, so one button suffices.
      */

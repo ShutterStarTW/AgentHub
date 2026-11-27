@@ -137,6 +137,21 @@
         </ul>
     ]]></description>
     <change-notes><![CDATA[
+        <p><b>1.3.11</b></p>
+        <ul>
+            <li>Each project folder is read once for all agents instead of once per agent, so opening a large project is faster.</li>
+            <li>A slow agent no longer drops the sessions of the agents that finished in time.</li>
+            <li><b>OpenClaw</b> sessions are no longer listed: they have no working directory, so the agent workspace was shown as a project. Its skills, MCP servers, instruction files and configuration are still discovered.</li>
+            <li>Copilot CLI sessions are read in one pass, and the MiMo Code instruction check reads only the start of the file.</li>
+            <li><b>Check for updates</b> and <b>Detect installed agents</b> run the same check in the terminal mode and in the background mode. The terminal mode prints a colored report with the installed and the latest version of each agent.</li>
+            <li>An agent whose version or presence cannot be checked is marked <code>[?]</code>, never as up to date or removed.</li>
+            <li>An install or removal whose terminal tab was closed no longer leaves the progress stuck, and a failed check is no longer taken for a removed agent.</li>
+            <li>A refresh that finishes late no longer overwrites newer data, or the data of the other environment after a switch between Windows and WSL.</li>
+            <li>When an agent's last session disappears, its local totals disappear with it.</li>
+            <li>A failure to write the history entry no longer hides a sync that was applied; the result shows as partially completed.</li>
+            <li>Migrating duplicates continues with the next target and the next skill when one share fails, and a promoted skill that cannot be shared further is reported as partial.</li>
+            <li>The <b>Migrate Duplicate Skills</b> and <b>Clean Up Redundant Copies</b> dialogs share one layout.</li>
+        </ul>
         <p><b>1.3.10</b></p>
         <ul>
             <li>The Usage tab no longer leaves a <code>/usage</code> session in Claude Code's history on every refresh. Claude Code versions without the <code>--no-session-persistence</code> flag use the sign-in provider instead.</li>

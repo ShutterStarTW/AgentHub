@@ -13,7 +13,7 @@ package com.shutterstar.agenthub.projects.launch
  *
  * Only single-command lines are listed, so a line works the same in cmd, Windows PowerShell and bash.
  * `mimo session import-claude` (imports every Claude session) and Codex's `/import` need command
- * chaining or a live TUI check first (see ai-docs/milestones/agenthub-milestone-06-cross-agent-handoff.md, 4a).
+ * chaining or a live TUI check first.
  *
  * Pure Kotlin (no IntelliJ imports) so it can be unit tested standalone.
  */

@@ -1,5 +1,6 @@
 package com.shutterstar.agenthub.projects.resolve
 
+import com.shutterstar.agenthub.ProcessSupport
 import java.io.IOException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
@@ -15,10 +16,10 @@ object ProcessCommandRunner {
             val started = ProcessBuilder(command).redirectErrorStream(true).start()
             process = started
             val outputFuture = CompletableFuture.supplyAsync {
-                started.inputStream.bufferedReader().use { it.readText() }
+                ProcessSupport.readCapped(started.inputStream)
             }
             if (!started.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)) {
-                started.destroyForcibly()
+                ProcessSupport.destroyTree(started)
                 started.waitFor(OUTPUT_DRAIN_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
                 outputFuture.cancel(true)
                 null
@@ -26,11 +27,11 @@ object ProcessCommandRunner {
                 readOutput(outputFuture).takeIf { started.exitValue() == 0 }
             }
         } catch (_: IOException) {
-            process?.destroyForcibly()
+            process?.let(ProcessSupport::destroyTree)
             null
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
-            process?.destroyForcibly()
+            process?.let(ProcessSupport::destroyTree)
             null
         }
     }

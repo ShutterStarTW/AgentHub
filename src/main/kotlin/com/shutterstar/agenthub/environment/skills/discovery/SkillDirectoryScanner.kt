@@ -2,6 +2,9 @@ package com.shutterstar.agenthub.environment.skills.discovery
 
 import com.shutterstar.agenthub.ScanBudget
 import com.shutterstar.agenthub.environment.discovery.PROJECT_WALK_EXCLUDED_DIRECTORY_NAMES
+import com.shutterstar.agenthub.environment.discovery.ProjectFileInventory
+import com.shutterstar.agenthub.environment.discovery.ProjectScanScope
+import com.shutterstar.agenthub.environment.discovery.ProjectWalkStats
 import com.shutterstar.agenthub.environment.skills.model.SkillScope
 import java.nio.charset.StandardCharsets
 import java.nio.file.FileVisitResult
@@ -122,7 +125,17 @@ internal class SkillDirectoryScanner(
         budget: ScanBudget = newBudget(),
     ): List<SkillSourceRecord> {
         if (!Files.isDirectory(projectRoot, LinkOption.NOFOLLOW_LINKS)) return emptyList()
+        val inventory = ProjectScanScope.inventory(
+            projectRoot, ProjectWalkStats.SKILL, MAXIMUM_SCAN_DEPTH, INVENTORY_ENTRY_BUDGET,
+            countExcluded = true, recordExcluded = true,
+        )
+        if (inventory != null) {
+            replayNestedProjectSkills(
+                inventory, projectRoot, ownerDirectoryName, agentId, shared, projectName, requireValidMetadata, budget,
+            )?.let { return it }
+        }
         val records = mutableListOf<SkillSourceRecord>()
+        val budgetBefore = budget.remaining()
         runCatching {
             Files.walkFileTree(
                 projectRoot,
@@ -180,7 +193,65 @@ internal class SkillDirectoryScanner(
                 },
             )
         }.getOrElse { return emptyList() }
+        ProjectWalkStats.record(ProjectWalkStats.SKILL, budgetBefore - budget.remaining())
 
+        return records
+            .distinctBy { it.path }
+            .sortedBy { it.path.lowercase() }
+    }
+
+    /**
+     * The same traversal as the walk in [discoverNestedProjectSkills], replayed over the shared inventory of the
+     * project: the budget is used up entry by entry in the same order, a skipped directory skips its subtree, and the
+     * skills directory of the owner is read as before. Null when the inventory was cut short and the replay would run
+     * past its end - the caller then walks the tree itself.
+     */
+    private fun replayNestedProjectSkills(
+        inventory: ProjectFileInventory,
+        projectRoot: Path,
+        ownerDirectoryName: String,
+        agentId: String?,
+        shared: Boolean,
+        projectName: String,
+        requireValidMetadata: Boolean,
+        budget: ScanBudget,
+    ): List<SkillSourceRecord>? {
+        val records = mutableListOf<SkillSourceRecord>()
+        var skipBelowDepth: Int? = null
+        var terminated = false
+        for (entry in inventory.entries) {
+            val skipping = skipBelowDepth
+            if (skipping != null) {
+                if (entry.depth > skipping) continue
+                skipBelowDepth = null
+            }
+            if (!budget.consume()) {
+                terminated = true
+                break
+            }
+            if (!entry.isDirectory) continue
+            val name = entry.path.fileName?.toString()
+            val isRoot = entry.path == projectRoot
+            when {
+                entry.excluded -> skipBelowDepth = entry.depth
+                !isRoot && name != null && name.startsWith('.') && !name.equals(ownerDirectoryName, ignoreCase = true) ->
+                    skipBelowDepth = entry.depth
+                name.equals(SKILLS_DIRECTORY, ignoreCase = true) &&
+                    entry.path.parent?.fileName?.toString().equals(ownerDirectoryName, ignoreCase = true) -> {
+                    records += discover(
+                        root = entry.path,
+                        agentId = agentId,
+                        scope = SkillScope.PROJECT,
+                        shared = shared,
+                        projectName = projectName,
+                        requireValidMetadata = requireValidMetadata,
+                        budget = budget,
+                    )
+                    skipBelowDepth = entry.depth
+                }
+            }
+        }
+        if (!terminated && inventory.truncated) return null
         return records
             .distinctBy { it.path }
             .sortedBy { it.path.lowercase() }
@@ -243,6 +314,9 @@ internal class SkillDirectoryScanner(
         const val MAXIMUM_METADATA_BYTES = 128 * 1024
         const val MAXIMUM_SCAN_DEPTH = 12
         const val MAXIMUM_SCAN_ENTRIES = 20_000
+
+        /** The shared project inventory lists more than one owner's walk visits: owners skip other dot directories. */
+        const val INVENTORY_ENTRY_BUDGET = 4 * MAXIMUM_SCAN_ENTRIES
         val SKILL_NAME_PATTERN = Regex("[a-z0-9]+(?:-[a-z0-9]+)*")
         val EXCLUDED_PROJECT_DIRECTORIES = PROJECT_WALK_EXCLUDED_DIRECTORY_NAMES
     }

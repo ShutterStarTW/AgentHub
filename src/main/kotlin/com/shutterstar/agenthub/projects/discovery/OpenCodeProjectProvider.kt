@@ -363,15 +363,7 @@ class OpenCodeSqliteReader(
         )
     }
 
-    private fun decodeHex(value: String): String? {
-        if (value.length % 2 != 0) return null
-        val bytes = ByteArray(value.length / 2)
-        for (index in bytes.indices) {
-            val byte = value.substring(index * 2, index * 2 + 2).toIntOrNull(16) ?: return null
-            bytes[index] = byte.toByte()
-        }
-        return bytes.toString(Charsets.UTF_8)
-    }
+    private fun decodeHex(value: String): String? = SqliteCli.decodeHex(value)
 
     private fun epochMillis(value: String): Instant? = value.toLongOrNull()?.let {
         runCatching { Instant.ofEpochMilli(it) }.getOrNull()

@@ -56,9 +56,11 @@ class ProjectIndexService(
     /**
      * The last discovery result of this IDE session.
      */
+    private class LiveResult(val projects: List<DiscoveredProject>, val stamp: String)
+
+    /** One immutable value, so a reader never sees the new list with the previous stamp. */
     @Volatile
-    private var liveProjects: List<DiscoveredProject>? = null
-    @Volatile private var liveStamp: String? = null
+    private var live: LiveResult? = null
 
     private val refreshListeners = CopyOnWriteArrayList<(ProjectDiscoveryResult) -> Unit>()
 
@@ -66,7 +68,7 @@ class ProjectIndexService(
 
     fun loadState(state: ProjectIndexState) {
         this.storedState = state
-        liveProjects = null
+        live = null
     }
 
     /**
@@ -76,12 +78,12 @@ class ProjectIndexService(
      */
     fun cachedProjects(): List<DiscoveredProject> {
         val currentStamp = store.stamp()
-        if (liveStamp != currentStamp) liveProjects = null
-        return ProjectVisibility.filter(liveProjects ?: storedView().projects, isAgentVisible)
+        val current = live?.takeIf { it.stamp == currentStamp }
+        return ProjectVisibility.filter(current?.projects ?: storedView().projects, isAgentVisible)
     }
 
-    /** Whether this IDE session has run discovery yet. */
-    fun hasLiveResults(): Boolean = liveProjects != null
+    /** Whether this IDE session has run discovery and nothing has changed the stored index since. */
+    fun hasLiveResults(): Boolean = live?.stamp == store.stamp()
 
     fun lastRefreshedAt(): Instant? = storedView().state.refreshedAtEpochMillis
         .takeIf { it > 0L }
@@ -107,8 +109,7 @@ class ProjectIndexService(
                 }
                 val merged = result.copy(projects = preserveFailedProviders(result))
                 refreshStore.update { ProjectIndexStateMapper.encode(merged.projects, now()) }
-                liveProjects = merged.projects
-                liveStamp = refreshStore.stamp()
+                live = LiveResult(merged.projects, refreshStore.stamp())
                 refreshListeners.forEach { listener -> runCatching { listener(merged) } }
                 merged
             }

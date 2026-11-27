@@ -34,13 +34,6 @@ class NativeResumeCommandsTest {
     }
 
     @Test
-    fun `should resume an OpenClaw conversation by its session key`() {
-        assertEquals("openclaw resume agent:main:main", NativeResumeCommands.command("openclaw", "agent:main:main"))
-        assertNull(NativeResumeCommands.unavailableReason("openclaw", "agent:ops:bugfix"))
-        assertNotNull(NativeResumeCommands.unavailableReason("openclaw", "agent:main:main; rm -rf /"))
-    }
-
-    @Test
     fun `should keep the full V3 Kiro session id when resuming`() {
         val id = "sess_11111111-2222-4333-8444-555555555555"
 

@@ -18,8 +18,6 @@ object DetectionResultsWatcher {
         Thread(r, "llmbrains-watcher").also { it.isDaemon = true }
     }
     private val updateWatchTask = AtomicReference<ScheduledFuture<*>?>()
-    private val versionWatchTask = AtomicReference<ScheduledFuture<*>?>()
-    private val detectWatchTask = AtomicReference<ScheduledFuture<*>?>()
     private val availabilityTasks = ConcurrentHashMap<String, ScheduledFuture<*>>()
 
     private const val INSTALL_POLL_INTERVAL_MS = 3_000L
@@ -29,9 +27,12 @@ object DetectionResultsWatcher {
 
     internal fun watchCommandCompletion(project: Project, result: Path, onComplete: (Int) -> Unit) {
         val taskRef = AtomicReference<ScheduledFuture<*>?>()
+        val startTime = System.currentTimeMillis()
         val task = executor.scheduleWithFixedDelay({
             try {
-                val exitCode = if (project.isDisposed) -1 else if (Files.exists(result)) {
+                // A terminal tab closed early never writes the marker: give up after the final deadline.
+                val exitCode = if (project.isDisposed || System.currentTimeMillis() - startTime > UPDATE_MAX_WAIT_MS) -1
+                else if (Files.exists(result)) {
                     Files.readString(result).trim().toIntOrNull()
                 } else null
                 if (exitCode != null) {
@@ -71,15 +72,16 @@ object DetectionResultsWatcher {
                     ApplicationManager.getApplication().invokeLater({ onCancelled() }, ModalityState.any())
                     return@scheduleAtFixedRate
                 }
-                val isInstalled = AgentDetector.isCommandAvailable(agent.command, snapshot.settings)
+                // Null = the probe itself could not run: never read that as "not installed".
+                val isInstalled = AgentDetector.probeCommand(agent.command, snapshot.settings)
                 val elapsed = System.currentTimeMillis() - startTime
                 if (isInstalled == expectInstalled || elapsed > INSTALL_MAX_WAIT_MS) {
                     cancelTask()
                     // ModalityState.any() so the notification/refresh fires while the modal Settings dialog is open.
                     ApplicationManager.getApplication().invokeLater({
                         if (!settings.applyIfCurrent(snapshot) {
-                            settings.updateDetectionResult(agent.id, isInstalled)
-                            if (!isUpdate) {
+                            if (isInstalled != null) settings.updateDetectionResult(agent.id, isInstalled)
+                            if (!isUpdate && isInstalled != null) {
                                 // Activate in the matching set: companions are opt-in, agents opt-out.
                                 if (CompanionTools.isCompanion(agent.id)) {
                                     settings.setCompanionActive(agent.id, isInstalled)
@@ -176,48 +178,6 @@ object DetectionResultsWatcher {
     ) {
         pollFile(resultsFilePath, updateWatchTask, onTimeout, UPDATE_MAX_WAIT_MS) { content ->
             onComplete(UpdateAllReport.parse(content))
-        }
-    }
-
-    // Parses the `detect-all` script's result file: one `id=0|1` line per agent, terminated by `done=1`.
-    fun watchForDetectResults(
-        project: Project,
-        resultsFilePath: Path,
-    ) {
-        pollFile(resultsFilePath, detectWatchTask, onTimeout = {
-            showNotification(project, "Detect", "Agent detection timed out. Run Detect to retry.", NotificationType.WARNING)
-        }) { content ->
-            val results = content.lines().mapNotNull { line ->
-                val idx = line.indexOf('=')
-                if (idx <= 0) return@mapNotNull null
-                val key = line.substring(0, idx).trim()
-                if (key == "done") return@mapNotNull null
-                when (line.substring(idx + 1).trim()) {
-                    "1" -> key to true
-                    "0" -> key to false
-                    else -> null
-                }
-            }.toMap()
-            if (results.isNotEmpty()) {
-                val (installed, total) = applyResults(results)
-                AgentSettingsConfigurable.scheduleRefresh()
-                showNotification(project, "Detect", "$installed / $total agents installed", NotificationType.INFORMATION)
-            }
-        }
-    }
-
-    fun watchForVersionResults(
-        project: Project,
-        resultsFilePath: Path,
-    ) {
-        // The terminal script only sees npm/pip-managed agents; once it is done, the in-process
-        // check (registry lookups for everything else) produces the authoritative outdated set.
-        pollFile(resultsFilePath, versionWatchTask, onTimeout = {
-            showNotification(project, "Update", "Update check timed out. Check for updates again to retry.", NotificationType.WARNING)
-        }) { _ ->
-            ApplicationManager.getApplication().executeOnPooledThread {
-                AgentDetector.checkForUpdates(project, notifyIfUpToDate = true)
-            }
         }
     }
 

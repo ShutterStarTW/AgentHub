@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.11
+
+*2026-11-27*
+
+- Each project folder is read once for all agents instead of once per agent, so opening a large project is faster.
+- A slow agent no longer drops the sessions of the agents that finished in time.
+- **OpenClaw** sessions are no longer listed: they have no working directory, so the agent workspace was shown as a project. Its skills, MCP servers, instruction files and configuration are still discovered.
+- Copilot CLI sessions are read in one pass, and the MiMo Code instruction check reads only the start of the file.
+- **Check for updates** and **Detect installed agents** run the same check in the terminal mode and in the background mode. The terminal mode prints a colored report with the installed and the latest version of each agent.
+- An agent whose version or presence cannot be checked is marked `[?]`, never as up to date or removed.
+- An install or removal whose terminal tab was closed no longer leaves the progress stuck, and a failed check is no longer taken for a removed agent.
+- A refresh that finishes late no longer overwrites newer data, or the data of the other environment after a switch between Windows and WSL.
+- When an agent's last session disappears, its local totals disappear with it.
+- A failure to write the history entry no longer hides a sync that was applied; the result shows as partially completed.
+- Migrating duplicates continues with the next target and the next skill when one share fails, and a promoted skill that cannot be shared further is reported as partial.
+- The **Migrate Duplicate Skills** and **Clean Up Redundant Copies** dialogs share one layout.
+
 ## 1.3.10
 
 *2026-11-22*

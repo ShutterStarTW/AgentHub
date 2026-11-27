@@ -32,6 +32,8 @@ internal class UsageController(
     private val onStateChanged: (UsageControllerState) -> Unit,
     private val hasSlowProviders: () -> Boolean = { false },
     private val discoverSlow: (UsageDiscoveryResult) -> UsageDiscoveryResult = { it },
+    /** The cache partition (host or WSL distro); a run that finishes in another one must not write into it. */
+    private val partition: () -> String = { "" },
 ) {
     private val generation = AtomicLong()
     private val closed = AtomicBoolean()
@@ -66,7 +68,7 @@ internal class UsageController(
                 val localByAgent = LocalSessionUsageAggregator.aggregate(projects, currentTime)
                 state = state.copy(
                     snapshots = state.snapshots.map { snapshot ->
-                        snapshot.copy(localSummary = localByAgent[snapshot.agentId] ?: snapshot.localSummary)
+                        snapshot.copy(localSummary = localByAgent[snapshot.agentId])
                     },
                 )
                 onStateChanged(state)
@@ -75,6 +77,7 @@ internal class UsageController(
         }
 
         val ticket = generation.incrementAndGet()
+        val startPartition = partition()
         val projectSnapshot = projects.toList()
         state = state.copy(loading = true)
         onStateChanged(state)
@@ -83,12 +86,10 @@ internal class UsageController(
             if (closed.get() || ticket != generation.get()) return@Runnable
             val result = runCatching { discover(projectSnapshot) }
             result.onSuccess { discovered ->
-                if (discovered.liveEnabled) {
-                    lastLiveRefreshAt = discovered.refreshedAt
-                } else {
-                    lastLiveRefreshAt = null
+                if (isCurrent(ticket, startPartition)) {
+                    lastLiveRefreshAt = discovered.refreshedAt.takeIf { discovered.liveEnabled }
+                    runCatching { recordCache(discovered) }
                 }
-                runCatching { recordCache(discovered) }
             }
             deliver {
                 if (closed.get() || ticket != generation.get()) return@deliver
@@ -111,7 +112,7 @@ internal class UsageController(
                 )
                 onStateChanged(state)
             }
-            result.onSuccess { discovered -> refreshSlow(ticket, discovered) }
+            result.onSuccess { discovered -> refreshSlow(ticket, startPartition, discovered) }
         })
     }
 
@@ -119,12 +120,12 @@ internal class UsageController(
      * Slow providers (about a minute) run after the fast result is already delivered, so they never
      * delay the other agents; only the agents they cover are replaced in the current state.
      */
-    private fun refreshSlow(ticket: Long, discovered: UsageDiscoveryResult) {
-        if (closed.get() || ticket != generation.get()) return
+    private fun refreshSlow(ticket: Long, startPartition: String, discovered: UsageDiscoveryResult) {
+        if (!isCurrent(ticket, startPartition)) return
         if (!runCatching { hasSlowProviders() }.getOrDefault(false)) return
         val merged = runCatching { discoverSlow(discovered) }.getOrNull() ?: return
         if (merged === discovered) return
-        runCatching { recordCache(merged) }
+        if (isCurrent(ticket, startPartition)) runCatching { recordCache(merged) }
         val replaced = merged.snapshots
             .filter { snapshot -> discovered.snapshots.none { it === snapshot } }
             .associateBy { it.agentId }
@@ -139,6 +140,9 @@ internal class UsageController(
             onStateChanged(state)
         }
     }
+
+    private fun isCurrent(ticket: Long, startPartition: String): Boolean =
+        !closed.get() && ticket == generation.get() && partition() == startPartition
 
     fun resetCooldown() {
         lastLiveRefreshAt = null

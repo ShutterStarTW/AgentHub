@@ -14,14 +14,11 @@ usage() {
 Usage:
   llmbrains.sh check <friendly-name> <version-command> [install-hint]
   llmbrains.sh update <friendly-name> <binary> <update-command> [install-hint]
-  llmbrains.sh check-all <agent-definitions-json>
-  llmbrains.sh version-all <agent-definitions-file>
   llmbrains.sh update-all <agent-definitions-file> <active-agent-ids>
-  llmbrains.sh detect-all <agent-definitions-file> <output-file>
 USAGE
 }
 
-# version-all/update-all/detect-all receive their agent-definitions payload via a temp file
+# update-all receives their agent-definitions payload via a temp file
 # (rather than inline on the command line) for parity with the PowerShell script, where the
 # payload's raw `"`, `$`, and `|` characters get mangled when passed as native-exe arguments.
 decode_agent_field() {
@@ -169,127 +166,6 @@ case "$subcommand" in
       exit 1
     fi
     ;;
-  check-all)
-    if [[ $# -lt 1 ]]; then
-      echo "llmbrains.sh: check-all requires agent definitions JSON" >&2
-      usage >&2
-      exit 1
-    fi
-    agents_json="$1"
-
-    clear
-    printf "${COL_BRIGHT_WHITE}📋 Checking agents & companion tools${COL_RESET}\n"
-    printf "${COL_DIM}%s${COL_RESET}\n" "──────────────────────────────────────────────────"
-
-    ok_count=0
-    warn_count=0
-
-    while IFS='|' read -r name command version_args install_hint; do
-      if [[ -n "$name" ]]; then
-        version_command="$command $version_args"
-        "$0" check "$name" "$version_command" "$install_hint"
-        if [[ $? -eq 0 ]]; then ((ok_count++)); else ((warn_count++)); fi
-      fi
-    done < <(echo "$agents_json" | tr '~' '\n')
-
-    printf "${COL_DIM}%s${COL_RESET}\n" "──────────────────────────────────────────────────"
-    if [[ $warn_count -gt 0 ]]; then
-      printf "  ${COL_BRIGHT_GREEN}✓ %d OK${COL_RESET}   ${COL_YELLOW}⚠ %d issues${COL_RESET}\n\n" "$ok_count" "$warn_count"
-    else
-      printf "  ${COL_BRIGHT_GREEN}✓ %d OK${COL_RESET}\n\n" "$ok_count"
-    fi
-    ;;
-  version-all)
-    if [[ $# -lt 1 ]]; then
-      echo "llmbrains.sh: version-all requires agent definitions JSON" >&2
-      usage >&2
-      exit 1
-    fi
-    agents_json=$(read_agent_definitions "$1")
-    output_file="${2:-}"
-
-    clear
-    printf "${COL_BRIGHT_WHITE}📋 Agents & companion tools — versions & updates${COL_RESET}\n"
-    printf "${COL_DIM}%s${COL_RESET}\n" "──────────────────────────────────────────────────"
-
-    # Fetch npm outdated once (columns: Package Current Wanted Latest ...)
-    npm_outdated=""
-    if has_cmd npm; then
-      npm_outdated=$(npm outdated -g 2>/dev/null || true)
-    fi
-
-    # Fetch pip outdated once (columns: Package Version Latest Type); Debian/Ubuntu may only
-    # ship the pip3 name (python3-pip), so fall back to that
-    pip_outdated=""
-    if has_cmd pip; then
-      pip_outdated=$(pip list --outdated 2>/dev/null || true)
-    elif has_cmd pip3; then
-      pip_outdated=$(pip3 list --outdated 2>/dev/null || true)
-    fi
-
-    ok_count=0
-    update_count=0
-    warn_count=0
-    outdated_ids=""
-
-    while IFS='|' read -r id name command version_args update_hint install_hint; do
-      id=$(decode_agent_field "$id")
-      name=$(decode_agent_field "$name")
-      command=$(decode_agent_field "$command")
-      version_args=$(decode_agent_field "$version_args")
-      update_hint=$(decode_agent_field "$update_hint")
-      install_hint=$(decode_agent_field "$install_hint")
-      if [[ -n "$id" ]]; then
-        version_command="$command $version_args"
-        binary="${version_command%% *}"
-
-        if has_cmd "$binary"; then
-          read -ra _cmd <<< "$version_command"
-          version_output=$("${_cmd[@]}" 2>&1)
-          status=$?
-          version_first=$(echo "$version_output" | head -1)
-
-          if [[ $status -ne 0 ]]; then
-            printf "  ${COL_YELLOW}⚠${COL_RESET}  %-20s ${COL_YELLOW}installed, version check failed${COL_RESET}\n" "$name"
-            ((warn_count++))
-            continue
-          fi
-
-          latest=""
-          # Package name is the last non-flag token, e.g. "npm update ... -g @vinhnx/vtcode --registry=..." -> "@vinhnx/vtcode"
-          if [[ "$update_hint" == *"npm"* ]]; then
-            pkg=$(echo "$update_hint" | awk '{for (i=NF; i>=1; i--) if ($i !~ /^-/) {print $i; exit}}')
-            latest=$(echo "$npm_outdated" | awk -v p="$pkg" '$1==p {print $4}')
-          elif [[ "$update_hint" == *"pip"* ]]; then
-            pkg=$(echo "$update_hint" | awk '{for (i=NF; i>=1; i--) if ($i !~ /^-/) {print $i; exit}}' | tr '[:upper:]' '[:lower:]')
-            latest=$(echo "$pip_outdated" | awk -v p="$pkg" 'NR>2 && tolower($1)==p {print $3}')
-          fi
-
-          if [[ -n "$latest" ]]; then
-            printf "  ${COL_YELLOW}↑${COL_RESET}  %-20s ${COL_DIM}%s${COL_RESET}  →  ${COL_BRIGHT_GREEN}%s available${COL_RESET}\n" "$name" "$version_first" "$latest"
-            outdated_ids="${outdated_ids:+$outdated_ids,}$id"
-            ((update_count++))
-          else
-            printf "  ${COL_BRIGHT_GREEN}✓${COL_RESET}  %-20s ${COL_BRIGHT_GREEN}%s${COL_RESET}\n" "$name" "$version_first"
-            ((ok_count++))
-          fi
-        fi
-      fi
-    done < <(echo "$agents_json" | tr '~' '\n')
-
-    printf "${COL_DIM}%s${COL_RESET}\n" "──────────────────────────────────────────────────"
-    if [[ $update_count -gt 0 ]]; then
-      printf "  ${COL_BRIGHT_GREEN}✓ %d up to date${COL_RESET}   ${COL_YELLOW}↑ %d updates available${COL_RESET}\n\n" "$ok_count" "$update_count"
-    else
-      printf "  ${COL_BRIGHT_GREEN}✓ %d up to date${COL_RESET}\n\n" "$ok_count"
-    fi
-    if [[ -n "$output_file" ]]; then
-      echo "uptodate=$ok_count" >> "$output_file"
-      echo "updates=$update_count" >> "$output_file"
-      echo "outdated_ids=$outdated_ids" >> "$output_file"
-      echo "done=1" >> "$output_file"
-    fi
-    ;;
   update-all)
     if [[ $# -lt 2 ]]; then
       echo "llmbrains.sh: update-all requires agent definitions JSON and active agent IDs" >&2
@@ -353,50 +229,6 @@ case "$subcommand" in
       echo "failed_ids=$failed_ids" >> "$output_file"
       echo "done=1" >> "$output_file"
     fi
-    ;;
-  detect-all)
-    if [[ $# -lt 2 ]]; then
-      echo "llmbrains.sh: detect-all requires agent definitions and output file" >&2
-      usage >&2
-      exit 1
-    fi
-    agents_json=$(read_agent_definitions "$1")
-    output_file="$2"
-
-    clear
-    printf "${COL_BRIGHT_WHITE}🔍 Detecting installed agents & companion tools${COL_RESET}\n"
-    printf "${COL_DIM}%s${COL_RESET}\n" "──────────────────────────────────────────────────"
-
-    : > "$output_file"  # clear output file
-
-    found_count=0
-    missing_count=0
-
-    while IFS='|' read -r id name command version_args install_hint; do
-      id=$(decode_agent_field "$id")
-      name=$(decode_agent_field "$name")
-      command=$(decode_agent_field "$command")
-      version_args=$(decode_agent_field "$version_args")
-      install_hint=$(decode_agent_field "$install_hint")
-      if [[ -n "$id" ]]; then
-        version_command="$command $version_args"
-        binary="${version_command%% *}"
-
-        if has_cmd "$binary"; then
-          printf "  ${COL_BRIGHT_GREEN}✓${COL_RESET}  %-20s ${COL_BRIGHT_GREEN}installed${COL_RESET}\n" "$name"
-          echo "$id=1" >> "$output_file"
-          ((found_count++))
-        else
-          printf "  ${COL_YELLOW}✗${COL_RESET}  %-20s ${COL_DIM}not found%s${COL_RESET}\n" "$name" "$(windows_only_note "$binary")"
-          echo "$id=0" >> "$output_file"
-          ((missing_count++))
-        fi
-      fi
-    done < <(echo "$agents_json" | tr '~' '\n')
-
-    printf "${COL_DIM}%s${COL_RESET}\n" "──────────────────────────────────────────────────"
-    printf "  ${COL_BRIGHT_GREEN}✓ %d installed${COL_RESET}   ${COL_YELLOW}✗ %d not found${COL_RESET}\n\n" "$found_count" "$missing_count"
-    echo "done=1" >> "$output_file"
     ;;
   *)
     echo "llmbrains.sh: unknown subcommand '$subcommand'" >&2

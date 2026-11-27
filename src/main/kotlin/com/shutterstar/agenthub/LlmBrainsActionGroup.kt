@@ -9,6 +9,8 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.Separator
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.IconLoader
@@ -77,31 +79,18 @@ class LlmBrainsActionGroup : ActionGroup("AgentHub", "Open any CLI coding agent 
         }
         actions += Separator.getInstance()
         actions += SimpleRunAction("Detect installed agents", AllIcons.Actions.Find) {
-            if (settings.getState().runInBackground) {
-                AgentDetector.detectAndNotify(project)
-            } else {
-                project?.let { proj ->
-                    val tempFile = Files.createTempFile("llmbrains-detect-", ".txt")
-                    val command = buildDetectScript(CodingAgents.detectable(), tempFile)
-                    TerminalCommandRunner.run(proj, "🔍 Detect Agents", command)
-                    DetectionResultsWatcher.watchForDetectResults(proj, tempFile)
-                }
-            }
+            AgentDetector.detectAndNotify(project, reportInTerminal = !settings.getState().runInBackground)
         }
         actions += SimpleRunAction("Check for updates", AllIcons.Actions.Refresh) {
             project?.let { proj ->
-                if (settings.getState().runInBackground) {
-                    // The in-process check also covers agents the terminal script cannot see
-                    // (native installs, GitHub-release based agents) — same as "Detect installed agents".
-                    ApplicationManager.getApplication().executeOnPooledThread {
-                        AgentDetector.checkForUpdates(proj, notifyIfUpToDate = true)
+                // One check for both modes; with the terminal mode its report is also printed in a terminal.
+                val reportInTerminal = !settings.getState().runInBackground
+                object : Task.Backgroundable(proj, "Checking for agent updates", false) {
+                    override fun run(indicator: ProgressIndicator) {
+                        indicator.isIndeterminate = true
+                        AgentDetector.checkForUpdates(proj, notifyIfUpToDate = true, reportInTerminal = reportInTerminal)
                     }
-                } else {
-                    val tempFile = Files.createTempFile("llmbrains-version-", ".txt")
-                    val command = buildVersionAllScript(installedAgents + listOfNotNull(customAgent), tempFile)
-                    TerminalCommandRunner.runRespectingSettings(proj, "Check Updates", "📋 Check Updates", command)
-                    DetectionResultsWatcher.watchForVersionResults(proj, tempFile)
-                }
+                }.queue()
             }
         }
         val outdatedIds = settings.getOutdatedAgentIds()
@@ -181,18 +170,6 @@ class LlmBrainsActionGroup : ActionGroup("AgentHub", "Open any CLI coding agent 
         val file = Files.createTempFile(prefix, ".txt")
         Files.writeString(file, data)
         return file
-    }
-
-    private fun buildVersionAllScript(agents: List<CodingAgent>, outputFile: Path): String {
-        val data = agents.joinToString("~") { agentPayload(it) }
-        val dataFile = writeDataFile("llmbrains-version-data-", data)
-        return buildScript("version-all", listOf(dataFile.toString(), outputFile.toString()))
-    }
-
-    private fun buildDetectScript(agents: List<CodingAgent>, outputFile: Path): String {
-        val data = agents.joinToString("~") { agentPayload(it) }
-        val dataFile = writeDataFile("llmbrains-detect-data-", data)
-        return buildScript("detect-all", listOf(dataFile.toString(), outputFile.toString()))
     }
 
     private fun buildUpdateScript(agents: List<CodingAgent>, outputFile: Path): String {

@@ -62,6 +62,7 @@ import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectIdentity
 import com.shutterstar.agenthub.projects.model.ProjectVisibility
 import com.shutterstar.agenthub.projects.persistence.ProjectIndexService
+import com.shutterstar.agenthub.storage.AgentHubStorage
 import com.shutterstar.agenthub.storage.PersistedIndexWarmup
 import com.shutterstar.agenthub.storage.SharedStateChangeMonitor
 import com.shutterstar.agenthub.usage.discovery.UsageDiscoveryService
@@ -113,6 +114,7 @@ class AgentHubToolWindowPanel(
         configDiscovery = ConfigDiscoveryService(isAgentVisible = isAgentVisible),
         persist = EnvironmentIndexService.getInstance()::record,
         isAgentVisible = isAgentVisible,
+        partition = AgentHubStorage::runtimeId,
     )
     private val agentEnvironmentDiscovery = AgentEnvironmentDiscoveryService(environmentDiscovery, isAgentVisible = isAgentVisible)
     // One list/details divider position for the Projects, Agents and Skills tabs.
@@ -213,8 +215,9 @@ class AgentHubToolWindowPanel(
             if (!disposed && !project.isDisposed) callback()
         }, ModalityState.any()) },
         discover = { context ->
+            val startPartition = AgentHubStorage.runtimeId()
             skillsDiscovery.discover(context).also { snapshot ->
-                if (snapshot.warnings.isEmpty()) {
+                if (snapshot.warnings.isEmpty() && AgentHubStorage.runtimeId() == startPartition) {
                     runCatching { SkillBrowserIndexService.getInstance().record(
                         context.key,
                         snapshot.skills,
@@ -278,6 +281,7 @@ class AgentHubToolWindowPanel(
         onStateChanged = ::onUsageStateChanged,
         hasSlowProviders = { usageDiscovery.hasSlowProviders() },
         discoverSlow = { fast -> usageDiscovery.discoverSlow(fast) },
+        partition = AgentHubStorage::runtimeId,
     )
     private val tabs = LeftAlignedTabbedPane()
     private val toolbar = JPanel(BorderLayout(JBUI.scale(AgentHubUiComponents.CONTROL_GAP), 0)).apply {

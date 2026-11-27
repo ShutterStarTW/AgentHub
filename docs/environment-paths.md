@@ -398,16 +398,9 @@ Sources: the [OpenClaw docs](https://docs.openclaw.ai) — `reference/database-s
 The state directory is `OPENCLAW_STATE_DIR`, else `~/.openclaw-<profile>` for `OPENCLAW_PROFILE`, else `~/.openclaw`.
 The configuration is `<state>/openclaw.json` (`OPENCLAW_CONFIG_PATH`). The `--profile` flag cannot be observed.
 
-- **Sessions:** the `session_nodes` rows of `<state>/agents/<agentId>/agent/openclaw-agent.sqlite` (read-only, through the
-  `sqlite3` command line). An OpenClaw session has no working directory, so every `agent:` key (cron and webhook keys are
-  not conversations) is listed in the **workspace** of its agent: `agents.entries.<id>.workspace`; without it the sole
-  agent and `main` use `agents.defaults.workspace`, else `OPENCLAW_WORKSPACE_DIR`, else `<state>/workspace`, and the other
-  agents of a roster `<agents.defaults.workspace>/<id>` or `<state>/workspace-<id>`. The session id is the session key
-  (stable across resets); title: `display_name`, else `label`; times: `session_started_at` and `last_activity_at`
-  (milliseconds). The prompts are the `transcript_events` of the current session id with `message_role = 'user'` and
-  `provenance.kind = external_user` (or no provenance); an event stored compressed (`event_zstd`) is counted but has no
-  text. Resume: `openclaw resume <session key>`.
-- Not modelled: earlier windows of a session after a daily reset, channel and sender details, the legacy `sessions.json`.
+- **Sessions:** not listed. An OpenClaw session has no working directory, so it would only be shown under the agent
+  **workspace** (`agents.entries.<id>.workspace`; without it `agents.defaults.workspace`, else `OPENCLAW_WORKSPACE_DIR`, else
+  `<state>/workspace`), which is not a project the user worked in. There is no Resume either.
 - **Skills:** global `<state>/skills` (managed) and `<state>/agents/<id>/agent/workshop-skills`; project (the agent
   workspace) `<workspace>/skills`. `~/.agents/skills` and `<workspace>/.agents/skills` are the shared provider's. Bundled and
   plugin skills and `skills.load.extraDirs` are not modelled. Skills are not offered as symlinks (OpenClaw follows links
@@ -513,7 +506,6 @@ terminal in the project directory, with the native session ID it read from the a
 | Kiro CLI | `kiro-cli chat --resume-id <id>` |
 | MiMo Code | `mimo --session <id>` |
 | Oh My Pi | `omp --resume <id>` |
-| OpenClaw | `openclaw resume <session key>` |
 | OpenCode | `opencode --session <id>` |
 | Pi | `pi --session <id>` |
 | Mistral Vibe | `vibe --resume <id>` |

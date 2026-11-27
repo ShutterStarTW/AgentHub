@@ -28,8 +28,6 @@ import com.shutterstar.agenthub.LaunchFlags
  *
  * Verified against the installed CLIs' `--help` and the official docs on 2026-11-17:
  * - Hermes Agent: `hermes --resume <id>` (`-r`: "Resume a previous session by ID or title"; restores the recorded cwd)
- * - OpenClaw:      `openclaw resume <session key>` (`query`: "Session key, display name, or label"; AgentHub passes the exact
- *   `agent:<agentId>:<name>` key, which wins over fuzzy matches)
  * - Pi:            `pi --session <id>` ("Open a session by file path or full/partial ID")
  *
  * Pure Kotlin (no IntelliJ imports) so the session list model can consult it and it can be unit
@@ -64,7 +62,6 @@ object NativeResumeCommands {
         "kiro" to Template("kiro-cli", subcommand = "chat", idArgs = "--resume-id"),
         "mimo" to Template("mimo", idArgs = "--session"),
         "omp" to Template("omp", idArgs = "--resume"),
-        "openclaw" to Template("openclaw", subcommand = "resume"),
         "opencode" to Template("opencode", idArgs = "--session"),
         "pi" to Template("pi", idArgs = "--session"),
         "qwen" to Template("qwen", idArgs = "--resume"),

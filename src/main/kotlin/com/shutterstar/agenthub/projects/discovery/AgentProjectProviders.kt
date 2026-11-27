@@ -20,7 +20,6 @@ object AgentProjectProviders {
         "kiro" to { KiroProjectProvider() },
         "mimo" to { MimoProjectProvider() },
         "omp" to { OmpProjectProvider() },
-        "openclaw" to { OpenClawProjectProvider() },
         "opencode" to { OpenCodeProjectProvider() },
         "pi" to { PiProjectProvider() },
         "qwen" to { QwenProjectProvider() },

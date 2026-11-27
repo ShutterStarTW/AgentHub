@@ -5,6 +5,8 @@ import com.shutterstar.agenthub.environment.config.model.ConfigFormat
 import com.shutterstar.agenthub.environment.config.model.ConfigKind
 import com.shutterstar.agenthub.environment.config.model.ConfigScope
 import com.shutterstar.agenthub.environment.discovery.PROJECT_WALK_EXCLUDED_DIRECTORY_NAMES
+import com.shutterstar.agenthub.environment.discovery.ProjectScanScope
+import com.shutterstar.agenthub.environment.discovery.ProjectWalkStats
 import com.shutterstar.agenthub.projects.model.DiscoveredProject
 import com.shutterstar.agenthub.projects.model.ProjectPathResolver
 import java.io.IOException
@@ -32,6 +34,14 @@ abstract class FileConfigProvider(
         val root = ProjectPathResolver.resolveExistingRoot(project)?.toAbsolutePath()?.normalize() ?: return emptyList()
         if (!safePath(root)) return emptyList()
         val results = mutableListOf<AgentConfigSource>()
+        ProjectScanScope.inventory(root, ProjectWalkStats.CONFIG, MAX_DEPTH + 1, MAX_ENTRIES, countExcluded = true)?.let { inventory ->
+            inventory.entries.filter { it.isDirectory }.forEach { directory ->
+                projectPaths.forEach { relative ->
+                    inventory(directory.path.resolve(relative), ConfigScope.PROJECT, project.name)?.let(results::add)
+                }
+            }
+            return results.distinctBy { it.path }
+        }
         var visited = 0
         Files.walkFileTree(root, emptySet(), MAX_DEPTH + 1, object : SimpleFileVisitor<Path>() {
             override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
@@ -51,6 +61,7 @@ abstract class FileConfigProvider(
 
             override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = FileVisitResult.SKIP_SUBTREE
         })
+        ProjectWalkStats.record(ProjectWalkStats.CONFIG, visited)
         return results.distinctBy { it.path }
     }
 

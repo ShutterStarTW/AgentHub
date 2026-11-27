@@ -1,5 +1,3 @@
-import org.commonmark.parser.Parser
-import org.commonmark.renderer.html.HtmlRenderer
 import proguard.gradle.ProGuardTask
 
 buildscript {
@@ -7,7 +5,6 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath("org.commonmark:commonmark:0.22.0")
         // Plugin ZIP size (ProGuard phase 1): shrink-only,
         // no obfuscation. Only used by the standalone shrinkPluginJar/buildShrunkPlugin tasks below -
         // the everyday build/test/runIde path never depends on it.
@@ -19,12 +16,6 @@ plugins {
     kotlin("jvm") version "2.1.0"
     id("org.jetbrains.intellij.platform") version "2.18.1"
     jacoco
-}
-
-fun markdownToHtml(markdown: String): String {
-    val parser = Parser.builder().build()
-    val renderer = HtmlRenderer.builder().build()
-    return renderer.render(parser.parse(markdown))
 }
 
 group = "com.forret"

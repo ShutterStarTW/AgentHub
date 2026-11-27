@@ -78,13 +78,4 @@ class SessionDetailsModelTest {
         assertTrue(SessionDetailsModel.lines(history) { it.toString() }.any { it.startsWith("History: ") && it.endsWith("(transcript file missing)") })
         assertTrue(SessionDetailsModel.lines(transcript) { it.toString() }.any { it.startsWith("Transcript: ") })
     }
-
-    @Test
-    fun `should explain that OpenClaw sessions belong to the agent workspace`() {
-        val openClaw = AgentSession("agent:main:main", "openclaw", "/home/me/.openclaw/workspace", null, null, null)
-        val other = AgentSession("s", "claude", "/project", null, null, null)
-
-        assertTrue(SessionDetailsModel.OPENCLAW_NOTE in SessionDetailsModel.lines(openClaw) { it.toString() })
-        assertFalse(SessionDetailsModel.OPENCLAW_NOTE in SessionDetailsModel.lines(other) { it.toString() })
-    }
 }

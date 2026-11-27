@@ -59,8 +59,8 @@ class ProjectDiscoveryService(
         try {
             availableProviders.forEach { provider ->
                 try {
-                    val remainingNanos = deadlineNanos - System.nanoTime()
-                    if (remainingNanos <= 0) throw TimeoutException()
+                    // A zero timeout still returns an already finished result; only an unfinished provider times out.
+                    val remainingNanos = maxOf(0L, deadlineNanos - System.nanoTime())
                     val discovered = futures.getValue(provider).get(remainingNanos, TimeUnit.NANOSECONDS)
                     rawProjects += discovered.filter { it.agentId == provider.agentId }
                     LOG.fine("[ProjectDiscovery] ${provider.agentId}: discovered ${discovered.size} sessions")
